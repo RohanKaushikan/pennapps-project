@@ -1,26 +1,178 @@
-import { useState, useEffect } from 'react'
-import { Bell, Loader } from 'lucide-react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import { Bell, Loader, Wifi, WifiOff, RefreshCw, MapPin, Plane, Users, MessageSquare } from 'lucide-react'
 
-export default function TravelWelcomeApp() {
+// Constants
+const API_ENDPOINT = 'http://localhost:8000/api/country-info'
+const DEMO_DATA = {
+  name: "Japan",
+  flag: "🇯🇵",
+  welcome: [
+    {
+      icon: "🎌",
+      title: "Welcome to Japan!",
+      message: "Konnichiwa! Your travel companion is ready to help you navigate this amazing country."
+    },
+    {
+      icon: "🏮",
+      title: "Cultural Experience",
+      message: "Discover the perfect blend of ancient traditions and cutting-edge modern innovations."
+    },
+    {
+      icon: "🗾",
+      title: "Geography & Climate",
+      message: "From snowy Hokkaido to tropical Okinawa, Japan offers diverse landscapes and experiences."
+    }
+  ],
+  transport: [
+    "IC cards (Suica/Pasmo) work on all trains, subways, and buses",
+    "Follow blue signs for domestic flights, red signs for international",
+    "Shinkansen (bullet train) requires seat reservations for long distances",
+    "Taxis are expensive but extremely reliable, clean, and safe",
+    "Train stations have English announcements and signage",
+    "Rush hours are 7-9 AM and 5-7 PM - expect crowded trains"
+  ],
+  culture: [
+    "Remove shoes when entering homes, temples, and traditional restaurants",
+    "Bowing is customary - a slight nod is perfectly acceptable for visitors",
+    "Keep voices low on public transportation and avoid phone calls",
+    "Cash is still preferred - many places don't accept credit cards",
+    "Tipping is not expected and can sometimes be considered rude",
+    "Wait for others to exit before boarding trains or elevators"
+  ],
+  language: [
+    {
+      native: "こんにちは (Konnichiwa)",
+      meaning: "Hello (formal daytime greeting)",
+      pronunciation: "kon-nee-chee-wah"
+    },
+    {
+      native: "ありがとうございます (Arigatou gozaimasu)",
+      meaning: "Thank you very much",
+      pronunciation: "ah-ree-gah-toh go-zah-ee-mahs"
+    },
+    {
+      native: "すみません (Sumimasen)",
+      meaning: "Excuse me / I'm sorry",
+      pronunciation: "soo-mee-mah-sen"
+    },
+    {
+      native: "英語を話せますか？ (Eigo wo hanasemasu ka?)",
+      meaning: "Do you speak English?",
+      pronunciation: "eh-go wo hah-nah-seh-mahs kah"
+    },
+    {
+      native: "トイレはどこですか？ (Toire wa doko desu ka?)",
+      meaning: "Where is the bathroom?",
+      pronunciation: "toy-reh wah doh-koh dess kah"
+    }
+  ]
+}
+
+const TravelWelcomeApp = () => {
+  // State management
   const [countryData, setCountryData] = useState(null)
   const [activeTab, setActiveTab] = useState('welcome')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [isOnline, setIsOnline] = useState(true) // Default to true, will be updated on client
 
-  // Function to fetch country data from backend
-  const fetchCountryData = async () => {
+  // Memoized tab configuration
+  const tabs = useMemo(() => [
+    { id: 'welcome', label: 'Welcome', icon: MapPin },
+    { id: 'transport', label: 'Transport', icon: Plane },
+    { id: 'culture', label: 'Culture', icon: Users },
+    { id: 'language', label: 'Language', icon: MessageSquare }
+  ], [])
+
+  // Network status monitoring
+  useEffect(() => {
+    // Only run on client side
+    if (typeof window === 'undefined') return
+
+    // Set initial online status
+    setIsOnline(navigator.onLine)
+
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
+
+    window.addEventListener('online', handleOnline)
+    window.addEventListener('offline', handleOffline)
+
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      window.removeEventListener('offline', handleOffline)
+    }
+  }, [])
+
+  // API call with better error handling
+  const fetchCountryData = useCallback(async () => {
+    if (!isOnline) {
+      throw new Error('No internet connection. Please check your network and try again.')
+    }
+
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+
     try {
-      const response = await fetch('http://localhost:8000/api/country-info')
+      const response = await fetch(API_ENDPOINT, {
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+
+      clearTimeout(timeoutId)
+
       if (!response.ok) {
-        throw new Error('Failed to fetch country data')
+        throw new Error(`Server error: ${response.status} ${response.statusText}`)
       }
+
       const data = await response.json()
+      
+      // Validate data structure
+      if (!data.name || !data.welcome) {
+        throw new Error('Invalid data format received from server')
+      }
+
       return data
     } catch (error) {
-      console.error('Error:', error)
+      clearTimeout(timeoutId)
+      
+      if (error.name === 'AbortError') {
+        throw new Error('Request timed out. Please try again.')
+      }
+      
+      console.error('API Error:', error)
       throw error
     }
-  }
+  }, [isOnline])
+
+  // Load demo data
+  const loadDemoData = useCallback(() => {
+    setLoading(true)
+    setError(null)
+    
+    // Simulate API delay
+    setTimeout(() => {
+      setCountryData(DEMO_DATA)
+      setLoading(false)
+    }, 1500)
+  }, [])
+
+  // Retry mechanism
+  const retryDataFetch = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    
+    try {
+      const data = await fetchCountryData()
+      setCountryData(data)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [fetchCountryData])
 
   // Initialize the app
   useEffect(() => {
@@ -28,40 +180,68 @@ export default function TravelWelcomeApp() {
       try {
         const data = await fetchCountryData()
         setCountryData(data)
-        setLoading(false)
-      } catch (error) {
-        setError('Failed to load country information. Please try again later.')
+      } catch (err) {
+        setError(err.message)
+      } finally {
         setLoading(false)
       }
     }
 
     initApp()
+  }, [fetchCountryData])
+
+  // Keyboard navigation for tabs
+  const handleKeyDown = useCallback((event, tabId) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      setActiveTab(tabId)
+    }
   }, [])
 
-  // Loading spinner component
+  // Components
   const LoadingSpinner = () => (
-    <div className="flex justify-center items-center py-20">
-      <div className="loader"></div>
+    <div className="text-center py-20 px-5" role="status" aria-label="Loading country information">
+      <div className="inline-block w-12 h-12 border-3 border-slate-200 rounded-full border-t-blue-600 animate-spin mb-4" aria-hidden="true"></div>
+      <p className="text-slate-600 text-sm">Loading country information...</p>
     </div>
   )
 
-  // Error message component
   const ErrorMessage = ({ message }) => (
-    <div className="error-message">
-      {message}
+    <div className="py-20 px-5 text-center" role="alert">
+      <div className="bg-white rounded-2xl p-8 mx-5 border border-red-200 shadow-sm">
+        <WifiOff size={24} className="text-red-500 mx-auto mb-4 block" />
+        <h3 className="text-red-600 text-xl font-bold mb-2">Connection Error</h3>
+        <p className="text-gray-600 mb-6 leading-relaxed">{message}</p>
+        <div className="flex gap-3 justify-center flex-wrap">
+          <button 
+            onClick={retryDataFetch} 
+            className="px-6 py-3 bg-blue-600 text-white rounded-xl font-semibold text-sm border-none cursor-pointer transition-all flex items-center gap-2 hover:bg-blue-700 hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={loading}
+          >
+            <RefreshCw size={16} />
+            {loading ? 'Retrying...' : 'Try Again'}
+          </button>
+          <button 
+            onClick={loadDemoData} 
+            className="px-6 py-3 bg-gray-100 text-gray-700 rounded-xl font-semibold text-sm border border-gray-300 cursor-pointer transition-all flex items-center gap-2 hover:bg-gray-200"
+            disabled={loading}
+          >
+            Load Demo Data
+          </button>
+        </div>
+      </div>
     </div>
   )
 
-  // Tab content components
   const WelcomeTab = ({ welcome }) => (
-    <div className="tab-content active">
+    <div className="animate-fadeIn" role="tabpanel" aria-labelledby="welcome-tab">
       {welcome?.map((item, index) => (
-        <div key={index} className="card">
-          <div className="info-item">
-            <div>{item.icon}</div>
-            <div style={{ marginLeft: '10px' }}>
-              <h3>{item.title}</h3>
-              <p style={{ color: '#666' }}>{item.message}</p>
+        <div key={index} className="bg-white rounded-2xl p-6 mb-4 shadow-sm border border-black/5 border-l-4 border-l-blue-600">
+          <div className="flex items-start gap-4">
+            <div className="text-3xl flex-shrink-0 w-12 h-12 flex items-center justify-center bg-blue-100 rounded-xl" aria-hidden="true">{item.icon}</div>
+            <div>
+              <h3 className="font-bold text-gray-800 mb-2 text-lg">{item.title}</h3>
+              <p className="text-gray-600 leading-relaxed">{item.message}</p>
             </div>
           </div>
         </div>
@@ -70,43 +250,63 @@ export default function TravelWelcomeApp() {
   )
 
   const TransportTab = ({ transport }) => (
-    <div className="tab-content">
-      <div className="card">
-        <h3 className="title">Transportation Tips</h3>
-        {transport?.map((tip, index) => (
-          <div key={index} className="info-item">
-            <div className="dot"></div>
-            <div>{tip}</div>
-          </div>
-        ))}
+    <div className="animate-fadeIn" role="tabpanel" aria-labelledby="transport-tab">
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-black/5">
+        <h3 className="text-xl font-bold mb-5 text-gray-800 flex items-center gap-3 pb-3 border-b-2 border-gray-100">
+          <Plane size={20} aria-hidden="true" />
+          Transportation Tips
+        </h3>
+        <ul className="space-y-3" role="list">
+          {transport?.map((tip, index) => (
+            <li key={index} className="flex items-start gap-3 py-3 border-b border-slate-50 last:border-b-0" role="listitem">
+              <div className="w-2 h-2 bg-blue-600 rounded-full mt-2 flex-shrink-0" aria-hidden="true"></div>
+              <span className="text-gray-700 leading-relaxed">{tip}</span>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   )
 
   const CultureTab = ({ culture }) => (
-    <div className="tab-content">
-      <div className="card">
-        <h3 className="title">Cultural Guidelines</h3>
-        {culture?.map((tip, index) => (
-          <div key={index} className="info-item">
-            <div className="dot"></div>
-            <div>{tip}</div>
-          </div>
-        ))}
+    <div className="animate-fadeIn" role="tabpanel" aria-labelledby="culture-tab">
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-black/5">
+        <h3 className="text-xl font-bold mb-5 text-gray-800 flex items-center gap-3 pb-3 border-b-2 border-gray-100">
+          <Users size={20} aria-hidden="true" />
+          Cultural Guidelines
+        </h3>
+        <ul className="space-y-3" role="list">
+          {culture?.map((tip, index) => (
+            <li key={index} className="flex items-start gap-3 py-3 border-b border-slate-50 last:border-b-0" role="listitem">
+              <div className="w-2 h-2 bg-blue-600 rounded-full mt-2 flex-shrink-0" aria-hidden="true"></div>
+              <span className="text-gray-700 leading-relaxed">{tip}</span>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   )
 
   const LanguageTab = ({ language }) => (
-    <div className="tab-content">
-      <div className="card">
-        <h3 className="title">Essential Phrases</h3>
-        {language?.map((phrase, index) => (
-          <div key={index} className="phrase">
-            <div className="phrase-native">{phrase.native}</div>
-            <div className="phrase-meaning">{phrase.meaning}</div>
-          </div>
-        ))}
+    <div className="animate-fadeIn" role="tabpanel" aria-labelledby="language-tab">
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-black/5">
+        <h3 className="text-xl font-bold mb-5 text-gray-800 flex items-center gap-3 pb-3 border-b-2 border-gray-100">
+          <MessageSquare size={20} aria-hidden="true" />
+          Essential Phrases
+        </h3>
+        <div className="space-y-4">
+          {language?.map((phrase, index) => (
+            <div key={index} className="bg-slate-50 rounded-2xl p-5 border border-slate-200 transition-all hover:bg-slate-100 hover:border-slate-300">
+              <div className="font-bold text-blue-800 mb-2 text-lg" lang="ja">{phrase.native}</div>
+              <div className="text-gray-700 mb-1.5 font-medium">{phrase.meaning}</div>
+              {phrase.pronunciation && (
+                <div className="text-gray-500 italic">
+                  <small>Pronunciation: {phrase.pronunciation}</small>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -129,287 +329,61 @@ export default function TravelWelcomeApp() {
   }
 
   return (
-    <div style={{ backgroundColor: '#f3f4f6', minHeight: '100vh' }}>
-      <style>{`
-        .header {
-          background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
-          color: white;
-          padding: 24px;
-          border-radius: 0 0 24px 24px;
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-        }
-
-        .header-content {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          max-width: 28rem;
-          margin: 0 auto;
-        }
-
-        .header h1 {
-          font-size: 1.5rem;
-          font-weight: bold;
-          margin: 0 0 4px 0;
-        }
-
-        .header p {
-          font-size: 0.875rem;
-          opacity: 0.9;
-          margin: 0;
-        }
-
-        .tabs {
-          display: flex;
-          background: rgba(255, 255, 255, 0.5);
-          margin: 16px;
-          border-radius: 16px;
-          padding: 4px;
-          border: 1px solid #d1d5db;
-          max-width: 28rem;
-          margin: 16px auto;
-        }
-
-        .tab-button {
-          flex: 1;
-          padding: 12px 16px;
-          border-radius: 12px;
-          font-weight: 500;
-          transition: all 0.2s;
-          background: none;
-          border: none;
-          cursor: pointer;
-          font-size: 0.875rem;
-          color: #6b7280;
-        }
-
-        .tab-button.active {
-          background: white;
-          color: #1f2937;
-          box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-          border: 1px solid #d1d5db;
-        }
-
-        .tab-button:hover:not(.active) {
-          background: rgba(255, 255, 255, 0.5);
-        }
-
-        .content-area {
-          padding: 0 16px 24px;
-          max-width: 28rem;
-          margin: 0 auto;
-        }
-
-        .tab-content {
-          display: block;
-        }
-
-        .card {
-          background: white;
-          border-radius: 16px;
-          padding: 20px;
-          margin-bottom: 16px;
-          box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-          border: 1px solid #e5e7eb;
-        }
-
-        .info-item {
-          display: flex;
-          align-items: flex-start;
-          padding: 12px 0;
-        }
-
-        .info-item h3 {
-          font-weight: 600;
-          color: #1f2937;
-          margin: 0 0 4px 0;
-        }
-
-        .info-item p {
-          margin: 0;
-          font-size: 0.875rem;
-        }
-
-        .title {
-          font-size: 1.125rem;
-          font-weight: bold;
-          margin-bottom: 16px;
-          color: #1f2937;
-          display: flex;
-          align-items: center;
-        }
-
-        .dot {
-          width: 8px;
-          height: 8px;
-          background: #3b82f6;
-          border-radius: 50%;
-          margin-right: 12px;
-          margin-top: 6px;
-          flex-shrink: 0;
-        }
-
-        .phrase {
-          padding: 12px 0;
-          border-bottom: 1px solid #f3f4f6;
-        }
-
-        .phrase:last-child {
-          border-bottom: none;
-        }
-
-        .phrase-native {
-          font-weight: 600;
-          color: #1f2937;
-          margin-bottom: 4px;
-        }
-
-        .phrase-meaning {
-          font-size: 0.875rem;
-          color: #6b7280;
-        }
-
-        .loader {
-          border: 4px solid #f3f3f3;
-          border-radius: 50%;
-          border-top: 4px solid #2563eb;
-          width: 40px;
-          height: 40px;
-          animation: spin 1s linear infinite;
-          margin: 20px auto;
-        }
-
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-
-        .error-message {
-          color: #dc2626;
-          text-align: center;
-          padding: 20px;
-          background: #fef2f2;
-          border-radius: 8px;
-          margin: 20px;
-          border: 1px solid #fecaca;
-        }
-      `}</style>
-
+    <div className="min-h-screen bg-slate-50 font-sans">
       {/* Header */}
-      <div className="header">
-        <div className="header-content">
+      <header className="bg-gradient-to-br from-blue-800 via-blue-600 to-blue-400 text-white p-6 rounded-b-3xl shadow-lg relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-r from-white/10 to-transparent pointer-events-none"></div>
+        <div className="flex justify-between items-center max-w-sm mx-auto relative z-10">
           <div>
-            <h1>Welcome</h1>
-            <p>{loading ? 'Loading...' : countryData?.name || 'Unknown Location'}</p>
+            <h1 className="text-3xl font-bold mb-1 text-shadow-sm">Welcome {countryData?.flag || ''}</h1>
+            <p className="text-sm opacity-90 font-medium">
+              {loading ? 'Loading...' : 
+               countryData?.name || 
+               'Unknown Location'}
+            </p>
           </div>
-          <div>
-            <Bell size={24} />
+          <div className="flex items-center gap-3">
+            <div 
+              className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-red-500'} ${isOnline ? 'animate-pulse' : ''}`}
+              title={isOnline ? 'Connected' : 'Offline'}
+              aria-label={isOnline ? 'Online' : 'Offline'}
+            />
+            <Bell size={24} aria-label="Notifications" />
           </div>
         </div>
-      </div>
+      </header>
 
       {/* Navigation Tabs */}
-      <div className="tabs">
-        <button
-          className={`tab-button ${activeTab === 'welcome' ? 'active' : ''}`}
-          onClick={() => setActiveTab('welcome')}
-        >
-          Welcome
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'transport' ? 'active' : ''}`}
-          onClick={() => setActiveTab('transport')}
-        >
-          Transport
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'culture' ? 'active' : ''}`}
-          onClick={() => setActiveTab('culture')}
-        >
-          Culture
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'language' ? 'active' : ''}`}
-          onClick={() => setActiveTab('language')}
-        >
-          Language
-        </button>
-      </div>
+      <nav className="flex bg-white/80 backdrop-blur-sm mx-4 my-5 rounded-2xl p-1.5 border border-white/20 shadow-sm max-w-sm mx-auto" role="tablist">
+        {tabs.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            id={`${id}-tab`}
+            className={`flex-1 px-2 py-3.5 rounded-2xl font-semibold text-xs transition-all duration-300 ease-out bg-none border-none cursor-pointer text-slate-600 relative flex flex-col items-center gap-1 ${
+              activeTab === id
+                ? 'bg-white text-blue-800 shadow-lg border border-blue-100 -translate-y-0.5'
+                : 'hover:bg-white/60 hover:-translate-y-0.5'
+            }`}
+            onClick={() => setActiveTab(id)}
+            onKeyDown={(e) => handleKeyDown(e, id)}
+            role="tab"
+            aria-selected={activeTab === id}
+            aria-controls={`${id}-panel`}
+          >
+            <Icon size={16} className="w-4 h-4 mb-0.5" />
+            {label}
+          </button>
+        ))}
+      </nav>
 
       {/* Content Area */}
-      <div className="content-area">
+      <main className="px-4 pb-8 max-w-sm mx-auto">
         {loading && <LoadingSpinner />}
         {error && <ErrorMessage message={error} />}
         {!loading && !error && renderTabContent()}
-      </div>
-
-      {/* Demo Data - Remove when connecting to real backend */}
-      {!loading && !error && !countryData && (
-        <div className="content-area">
-          <div className="card">
-            <h3>Demo Mode</h3>
-            <p>This app is running in demo mode. Connect to your backend API to see real country data.</p>
-            <button
-              onClick={() => {
-                // Simulate loading demo data
-                setLoading(true)
-                setTimeout(() => {
-                  setCountryData({
-                    name: "Japan",
-                    welcome: [
-                      {
-                        icon: "🎌",
-                        title: "Welcome to Japan!",
-                        message: "Konnichiwa! Your travel companion is ready to help."
-                      },
-                      {
-                        icon: "🏮",
-                        title: "Cultural Experience",
-                        message: "Discover the rich traditions and modern innovations of Japan."
-                      }
-                    ],
-                    transport: [
-                      "IC cards work on all trains and subways",
-                      "Follow blue signs for domestic, red for international",
-                      "Shinkansen (bullet train) requires reserved seats for long distances",
-                      "Taxis are expensive but very reliable and clean"
-                    ],
-                    culture: [
-                      "Remove shoes when entering homes and some restaurants",
-                      "Bowing is customary - a slight nod is perfectly acceptable",
-                      "Keep voices low on public transportation",
-                      "Cash is still king - many places don't accept cards"
-                    ],
-                    language: [
-                      {
-                        native: "こんにちは (Konnichiwa)",
-                        meaning: "Hello (formal greeting)"
-                      },
-                      {
-                        native: "ありがとうございます (Arigatou gozaimasu)",
-                        meaning: "Thank you very much"
-                      },
-                      {
-                        native: "すみません (Sumimasen)",
-                        meaning: "Excuse me / I'm sorry"
-                      },
-                      {
-                        native: "英語を話せますか？ (Eigo wo hanasemasu ka?)",
-                        meaning: "Do you speak English?"
-                      }
-                    ]
-                  })
-                  setLoading(false)
-                }, 1000)
-              }}
-              className="tab-button active"
-              style={{ width: '100%', marginTop: '10px' }}
-            >
-              Load Demo Data
-            </button>
-          </div>
-        </div>
-      )}
+      </main>
     </div>
   )
 }
+
+export default TravelWelcomeApp
