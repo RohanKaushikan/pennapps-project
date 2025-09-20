@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
-import { Bell, Loader, Wifi, WifiOff, RefreshCw, MapPin, Plane, Users, MessageSquare } from 'lucide-react'
+import { Bell, Loader, Wifi, WifiOff, RefreshCw, MapPin, Plane, Users, MessageSquare, User, LogOut, LogIn } from 'lucide-react'
+import { useLocation } from '../src/hooks/useLocation'
+import { getCountryFromCoordinates, getCountryCoordinates } from '../src/utils/countryMapping'
+import { getDemoCountryPhoto } from '../src/utils/photoService'
+import Globe from '../src/components/Globe'
 
 // Constants
 const API_ENDPOINT = 'http://localhost:8000/api/country-info'
@@ -68,6 +72,53 @@ const DEMO_DATA = {
   ]
 }
 
+// Alternative country data for demo users
+const FRANCE_DATA = {
+  name: "France",
+  flag: "🇫🇷",
+  welcome: [
+    {
+      icon: "🥖",
+      title: "Bienvenue en France!",
+      message: "Welcome to France! Your travel companion is ready to help you explore the country of art, culture, and cuisine."
+    },
+    {
+      icon: "🗼",
+      title: "City of Light",
+      message: "From the Eiffel Tower to charming countryside villages, France offers endless discoveries."
+    }
+  ],
+  transport: [
+    "Metro tickets work on buses, trains, and the subway in Paris",
+    "TGV high-speed trains connect major cities efficiently", 
+    "Validate your ticket before boarding regional trains",
+    "Taxis are metered but can be expensive in city centers"
+  ],
+  culture: [
+    "Greeting with 'Bonjour' is essential when entering shops",
+    "Lunch is typically 12-2 PM, dinner after 7:30 PM",
+    "Tipping 5-10% is appreciated but not mandatory",
+    "Dress codes tend to be more formal than other countries"
+  ],
+  language: [
+    {
+      native: "Bonjour",
+      meaning: "Hello / Good morning",
+      pronunciation: "bon-ZHOOR"
+    },
+    {
+      native: "Merci beaucoup", 
+      meaning: "Thank you very much",
+      pronunciation: "mer-SEE bo-KOO"
+    },
+    {
+      native: "Excusez-moi",
+      meaning: "Excuse me",
+      pronunciation: "ex-kew-ZAY mwah"
+    }
+  ]
+}
+
 const TravelWelcomeApp = () => {
   // State management
   const [countryData, setCountryData] = useState(null)
@@ -75,6 +126,75 @@ const TravelWelcomeApp = () => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [isOnline, setIsOnline] = useState(true) // Default to true, will be updated on client
+  const [isSignedIn, setIsSignedIn] = useState(false)
+  const [showSignInModal, setShowSignInModal] = useState(false)
+  const [user, setUser] = useState(null)
+  const [showUserMenu, setShowUserMenu] = useState(false)
+  
+  // Location and globe state
+  const { location, loading: locationLoading, error: locationError } = useLocation()
+  const [currentCountry, setCurrentCountry] = useState(null)
+  const [targetCountry, setTargetCountry] = useState(null)
+  const [targetCountryPhoto, setTargetCountryPhoto] = useState(null)
+  const [isGlobeAnimating, setIsGlobeAnimating] = useState(false)
+  const [globeAnimationComplete, setGlobeAnimationComplete] = useState(false)
+  const [showContent, setShowContent] = useState(false)
+
+  // Location detection and country mapping
+  useEffect(() => {
+    if (location) {
+      const detectedCountry = getCountryFromCoordinates(location.latitude, location.longitude)
+      setCurrentCountry(detectedCountry)
+      
+      // If signed in and we have a target country, start globe animation
+      if (isSignedIn && countryData && countryData.name !== detectedCountry.name) {
+        const targetCoords = getCountryCoordinates(countryData.name)
+        const targetPhoto = getDemoCountryPhoto(countryData.name)
+        setTargetCountry(targetCoords)
+        setTargetCountryPhoto(targetPhoto)
+        setIsGlobeAnimating(true)
+      }
+    }
+  }, [location, isSignedIn, countryData])
+
+  // Sign in/out functions
+  const handleSignIn = useCallback((userData) => {
+    setUser(userData)
+    setIsSignedIn(true)
+    setShowSignInModal(false)
+    setShowUserMenu(false)
+    
+    // Filter out user's home country from current data
+    if (countryData && countryData.name === userData.homeCountry) {
+      setCountryData(null)
+      loadDemoData() // Load different country data
+    }
+  }, [countryData])
+
+  const handleSignOut = useCallback(() => {
+    setUser(null)
+    setIsSignedIn(false)
+    setShowUserMenu(false)
+    setTargetCountry(null)
+    setIsGlobeAnimating(false)
+    setGlobeAnimationComplete(false)
+  }, [])
+
+  // Globe animation completion handler
+  const handleGlobeAnimationComplete = useCallback(() => {
+    setIsGlobeAnimating(false)
+    setGlobeAnimationComplete(true)
+    // Show content after animation completes
+    setTimeout(() => {
+      setShowContent(true)
+    }, 500)
+  }, [])
+
+  // Filter function to exclude user's home country
+  const shouldShowCountryData = useCallback((data) => {
+    if (!isSignedIn || !user?.homeCountry) return true
+    return data?.name !== user.homeCountry
+  }, [isSignedIn, user?.homeCountry])
 
   // Memoized tab configuration
   const tabs = useMemo(() => [
@@ -104,7 +224,7 @@ const TravelWelcomeApp = () => {
     }
   }, [])
 
-  // API call with better error handling
+  // API call with better error handling and country filtering
   const fetchCountryData = useCallback(async () => {
     if (!isOnline) {
       throw new Error('No internet connection. Please check your network and try again.')
@@ -118,6 +238,10 @@ const TravelWelcomeApp = () => {
         signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
+          ...(isSignedIn && user?.id && {
+            'Authorization': `Bearer ${user.token}`,
+            'X-User-Home-Country': user.homeCountry
+          })
         },
       })
 
@@ -134,6 +258,11 @@ const TravelWelcomeApp = () => {
         throw new Error('Invalid data format received from server')
       }
 
+      // Filter out home country data if signed in
+      if (!shouldShowCountryData(data)) {
+        throw new Error("Currently in your home country. Travel information will appear when you visit other countries.")
+      }
+
       return data
     } catch (error) {
       clearTimeout(timeoutId)
@@ -145,19 +274,38 @@ const TravelWelcomeApp = () => {
       console.error('API Error:', error)
       throw error
     }
-  }, [isOnline])
+  }, [isOnline, isSignedIn, user, shouldShowCountryData])
 
-  // Load demo data
+  // Load demo data with country filtering
   const loadDemoData = useCallback(() => {
     setLoading(true)
     setError(null)
     
+    // If signed in, provide different country data based on user's home country
+    let demoCountry = DEMO_DATA
+    if (isSignedIn && user?.homeCountry) {
+      // If user is from Japan, show different country (e.g., France)
+      if (user.homeCountry === 'Japan') {
+        demoCountry = FRANCE_DATA
+      }
+      // Add more country alternatives based on user's home country
+      else if (user.homeCountry === 'United States') {
+        // Show Japan data for US users, etc.
+        demoCountry = DEMO_DATA
+      }
+    }
+    
     // Simulate API delay
     setTimeout(() => {
-      setCountryData(DEMO_DATA)
+      if (shouldShowCountryData(demoCountry)) {
+        setCountryData(demoCountry)
+      } else {
+        setCountryData(null)
+        setError("Currently showing your home country. Travel to see location-specific information.")
+      }
       setLoading(false)
     }, 1500)
-  }, [])
+  }, [isSignedIn, user?.homeCountry, shouldShowCountryData])
 
   // Retry mechanism
   const retryDataFetch = useCallback(async () => {
@@ -180,15 +328,25 @@ const TravelWelcomeApp = () => {
       try {
         const data = await fetchCountryData()
         setCountryData(data)
+        
+        // If not signed in, show content immediately
+        if (!isSignedIn) {
+          setShowContent(true)
+          setLoading(false)
+        }
+        // If signed in, wait for globe animation to complete
+        else {
+          setLoading(false)
+        }
       } catch (err) {
         setError(err.message)
-      } finally {
         setLoading(false)
+        setShowContent(true)
       }
     }
 
     initApp()
-  }, [fetchCountryData])
+  }, [fetchCountryData, isSignedIn])
 
   // Keyboard navigation for tabs
   const handleKeyDown = useCallback((event, tabId) => {
@@ -198,7 +356,92 @@ const TravelWelcomeApp = () => {
     }
   }, [])
 
+  // Close user menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showUserMenu && !event.target.closest('.user-menu-container')) {
+        setShowUserMenu(false)
+      }
+    }
+
+    if (showUserMenu) {
+      document.addEventListener('mousedown', handleClickOutside)
+      return () => document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showUserMenu])
+
   // Components
+  const SignInModal = () => (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm" onClick={() => setShowSignInModal(false)}>
+      <div className="bg-white rounded-2xl w-11/12 max-w-md max-h-[90vh] overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+        <div className="p-6 pb-4 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-xl font-bold text-gray-800">Sign In to TravelEase</h2>
+          <button 
+            onClick={() => setShowSignInModal(false)}
+            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
+            aria-label="Close modal"
+          >
+            ×
+          </button>
+        </div>
+        <div className="p-6">
+          <p className="text-gray-600 mb-5 leading-relaxed">Sign in to get personalized travel information that excludes your home country.</p>
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Demo Users:</h3>
+            <button 
+              onClick={() => handleSignIn({
+                id: '1',
+                name: 'John Smith',
+                email: 'john@example.com',
+                homeCountry: 'United States',
+                token: 'demo-token-us'
+              })}
+              className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl cursor-pointer text-sm font-medium text-gray-700 flex items-center gap-3 transition-all hover:bg-gray-100 hover:border-gray-300 hover:-translate-y-0.5 mb-2 text-left"
+            >
+              <User size={16} />
+              John Smith (USA) - See Japan info
+            </button>
+            <button 
+              onClick={() => handleSignIn({
+                id: '2', 
+                name: 'Yuki Tanaka',
+                email: 'yuki@example.com',
+                homeCountry: 'Japan',
+                token: 'demo-token-jp'
+              })}
+              className="w-full p-4 bg-gray-50 border border-gray-200 rounded-xl cursor-pointer text-sm font-medium text-gray-700 flex items-center gap-3 transition-all hover:bg-gray-100 hover:border-gray-300 hover:-translate-y-0.5 text-left"
+            >
+              <User size={16} />
+              Yuki Tanaka (Japan) - See France info
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+
+  const UserMenu = () => (
+    <div className="absolute top-full right-0 mt-2 bg-white rounded-xl shadow-xl border border-gray-200 min-w-[220px] overflow-hidden z-50">
+      <div className="p-4 border-b border-gray-100 flex items-center gap-3">
+        <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+          <User size={18} className="text-blue-600" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-semibold text-gray-800 truncate">{user?.name}</div>
+          <div className="text-xs text-gray-500 truncate">From {user?.homeCountry}</div>
+          <div className="text-xs text-gray-400 truncate">{user?.email}</div>
+        </div>
+      </div>
+      <button 
+        onClick={handleSignOut} 
+        className="w-full p-3 bg-none border-none text-red-600 cursor-pointer text-sm font-medium flex items-center gap-2 transition-colors hover:bg-red-50"
+      >
+        <LogOut size={16} />
+        Sign Out
+      </button>
+    </div>
+  )
+
   const LoadingSpinner = () => (
     <div className="text-center py-20 px-5" role="status" aria-label="Loading country information">
       <div className="inline-block w-12 h-12 border-3 border-slate-200 rounded-full border-t-blue-600 animate-spin mb-4" aria-hidden="true"></div>
@@ -329,12 +572,26 @@ const TravelWelcomeApp = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 font-sans">
-      {/* Header */}
-      <header className="bg-gradient-to-br from-blue-800 via-blue-600 to-blue-400 text-white p-6 rounded-b-3xl shadow-lg relative overflow-hidden">
+    <div className="min-h-screen font-sans relative">
+      {/* Globe Background */}
+      <div className="fixed inset-0 z-0">
+        <Globe
+          currentLocation={location}
+          targetCountry={targetCountry}
+          targetCountryPhoto={targetCountryPhoto}
+          isAnimating={isGlobeAnimating}
+          onAnimationComplete={handleGlobeAnimationComplete}
+          isSignedIn={isSignedIn}
+        />
+      </div>
+      
+      {/* Content Overlay */}
+      <div className="relative z-10 min-h-screen bg-black/20 backdrop-blur-sm">
+        {/* Header */}
+        <header className="bg-gradient-to-br from-blue-800/90 via-blue-600/90 to-blue-400/90 text-white p-6 rounded-b-3xl shadow-lg relative overflow-visible backdrop-blur-md">
         <div className="absolute inset-0 bg-gradient-to-r from-white/10 to-transparent pointer-events-none"></div>
         <div className="flex justify-between items-center max-w-sm mx-auto relative z-10">
-          <div>
+          <div className="flex-1 min-w-0">
             <h1 className="text-3xl font-bold mb-1 text-shadow-sm">Welcome {countryData?.flag || ''}</h1>
             <p className="text-sm opacity-90 font-medium">
               {loading ? 'Loading...' : 
@@ -342,19 +599,41 @@ const TravelWelcomeApp = () => {
                'Unknown Location'}
             </p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-shrink-0">
             <div 
               className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-500' : 'bg-red-500'} ${isOnline ? 'animate-pulse' : ''}`}
               title={isOnline ? 'Connected' : 'Offline'}
               aria-label={isOnline ? 'Online' : 'Offline'}
             />
-            <Bell size={24} aria-label="Notifications" />
+            <Bell size={20} aria-label="Notifications" />
+            {isSignedIn ? (
+              <div className="relative user-menu-container">
+                <button 
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  className="w-9 h-9 rounded-full bg-white/20 border-2 border-white/30 text-white cursor-pointer flex items-center justify-center transition-all hover:bg-white/30 hover:-translate-y-0.5 backdrop-blur-sm"
+                  aria-label="User menu"
+                >
+                  <User size={20} />
+                </button>
+                {showUserMenu && <UserMenu />}
+              </div>
+            ) : (
+              <button 
+                onClick={() => setShowSignInModal(true)}
+                className="bg-white/20 border border-white/30 text-white px-3 py-2 rounded-xl text-sm font-semibold cursor-pointer transition-all flex items-center gap-2 hover:bg-white/30 hover:-translate-y-0.5 backdrop-blur-sm"
+                aria-label="Sign in"
+              >
+                <LogIn size={18} />
+                <span className="hidden sm:inline">Sign In</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
 
       {/* Navigation Tabs */}
-      <nav className="flex bg-white/80 backdrop-blur-sm mx-4 my-5 rounded-2xl p-1.5 border border-white/20 shadow-sm max-w-sm mx-auto" role="tablist">
+      {showContent && (
+        <nav className="flex bg-white/90 backdrop-blur-md mx-4 my-5 rounded-2xl p-1.5 border border-white/30 shadow-lg max-w-sm mx-auto" role="tablist">
         {tabs.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -374,14 +653,23 @@ const TravelWelcomeApp = () => {
             {label}
           </button>
         ))}
-      </nav>
+        </nav>
+      )}
 
       {/* Content Area */}
       <main className="px-4 pb-8 max-w-sm mx-auto">
         {loading && <LoadingSpinner />}
         {error && <ErrorMessage message={error} />}
-        {!loading && !error && renderTabContent()}
+        {!loading && !error && showContent && (
+          <div className="bg-white/95 backdrop-blur-sm rounded-2xl shadow-xl border border-white/20">
+            {renderTabContent()}
+          </div>
+        )}
       </main>
+
+      {/* Sign In Modal */}
+      {showSignInModal && <SignInModal />}
+      </div>
     </div>
   )
 }
