@@ -6,6 +6,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.datasets import make_regression
 import json
 from typing import List, Dict, Any
+from spacy_processor import TravelContentProcessor, ScrapedContent, Alert, LocationTrigger, ChangeDetection
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -40,6 +41,9 @@ class HealthResponse(BaseModel):
 
 # Global variable to store trained model
 trained_model = None
+
+# Initialize spaCy processor
+spacy_processor = TravelContentProcessor()
 
 @app.get("/", response_model=HealthResponse)
 async def root():
@@ -133,6 +137,99 @@ async def reset_model():
     global trained_model
     trained_model = None
     return {"message": "Model reset successfully"}
+
+# spaCy and Travel Content Processing Endpoints
+
+@app.post("/api/process-content")
+async def process_content(content_data: Dict[str, Any]):
+    """Process scraped content and generate alerts using spaCy"""
+    try:
+        alerts = spacy_processor.process_scraped_content(content_data)
+        return {
+            "message": "Content processed successfully",
+            "alerts_generated": len(alerts),
+            "alerts": [alert.__dict__ for alert in alerts]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Content processing failed: {str(e)}")
+
+@app.post("/api/process-location")
+async def process_location(location_data: Dict[str, Any]):
+    """Process location trigger and return relevant alerts"""
+    try:
+        alerts = spacy_processor.process_location_trigger(location_data)
+        return {
+            "message": "Location processed successfully",
+            "alerts": [alert.__dict__ for alert in alerts]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Location processing failed: {str(e)}")
+
+@app.post("/api/detect-changes")
+async def detect_changes(request_data: Dict[str, str]):
+    """Detect changes between old and new content"""
+    try:
+        old_content = request_data.get("old_content", "")
+        new_content = request_data.get("new_content", "")
+        
+        change_detection = spacy_processor.detect_changes(old_content, new_content)
+        
+        if change_detection:
+            return {
+                "message": "Changes detected",
+                "changes": change_detection.__dict__
+            }
+        else:
+            return {
+                "message": "No changes detected",
+                "changes": None
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Change detection failed: {str(e)}")
+
+@app.get("/api/example-processing")
+async def example_processing():
+    """Run example processing to demonstrate spaCy capabilities"""
+    try:
+        # Example scraped content
+        example_content = {
+            "source_id": "us_state_dept",
+            "country_code": "TH",
+            "url": "https://travel.state.gov/thailand",
+            "content": """
+            <h1>Thailand Travel Advisory</h1>
+            <p>Effective immediately, all travelers to Thailand must obtain a tourist visa for stays over 30 days. 
+            This is a critical requirement that cannot be waived. Travelers without proper documentation will be denied entry.</p>
+            <p>Additionally, proof of vaccination against COVID-19 is required for all international arrivals.</p>
+            <p>Please note that the processing time for visa applications has been extended to 10-15 business days.</p>
+            """,
+            "content_hash": "sha256_hash_example",
+            "scraped_at": "2025-01-20T10:30:00Z",
+            "content_type": "travel_advisory"
+        }
+        
+        # Process content
+        alerts = spacy_processor.process_scraped_content(example_content)
+        
+        # Example location trigger
+        location_data = {
+            "user_id": "user123",
+            "country_code": "TH",
+            "lat": 13.7563,
+            "lng": 100.5018,
+            "entry_detected_at": "2025-01-20T10:30:00Z"
+        }
+        
+        location_alerts = spacy_processor.process_location_trigger(location_data)
+        
+        return {
+            "message": "Example processing completed",
+            "content_alerts": [alert.__dict__ for alert in alerts],
+            "location_alerts": [alert.__dict__ for alert in location_alerts],
+            "total_alerts": len(alerts) + len(location_alerts)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Example processing failed: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn
