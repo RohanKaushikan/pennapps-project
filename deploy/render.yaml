@@ -1,0 +1,86 @@
+services:
+  - type: web
+    name: travel-alert-system-api
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: ./
+    dockerCommand: scripts/entrypoint.sh web
+    
+    # Environment variables
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      - key: LOG_LEVEL
+        value: INFO
+      - key: METRICS_ENABLED
+        value: true
+      - key: SECURITY_HEADERS_ENABLED
+        value: true
+      - key: CORS_ENABLED
+        value: true
+      - key: AUTO_MIGRATE
+        value: true
+      - key: WORKERS
+        value: 2
+    
+    # Health check configuration
+    healthCheckPath: /health
+    healthCheckTimeout: 300
+    
+    # Auto-deploy settings
+    autoDeploy: true
+    
+    # Scaling
+    scaling:
+      minInstances: 1
+      maxInstances: 10
+    
+    # Resource limits
+    plan: starter  # starter, standard, pro, pro-plus, pro-max
+    
+    # Custom domains (configure in Render dashboard)
+    # customDomains:
+    #   - travel-alerts.yourdomain.com
+
+  # Background worker service (optional)
+  - type: worker
+    name: travel-alert-system-worker
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: ./
+    dockerCommand: scripts/entrypoint.sh worker
+    
+    # Environment variables (same as web service)
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: false
+      - key: LOG_LEVEL
+        value: INFO
+      - key: WORKER_CONCURRENCY
+        value: 4
+    
+    # Auto-deploy settings
+    autoDeploy: true
+    
+    # Scaling
+    scaling:
+      minInstances: 1
+      maxInstances: 5
+    
+    # Resource limits
+    plan: starter
+
+databases:
+  # PostgreSQL database
+  - name: travel-alert-system-db
+    databaseName: travel_alerts
+    user: postgres
+    plan: starter  # starter, standard, pro, pro-plus, pro-max
+
+  # Redis cache
+  - name: travel-alert-system-redis
+    plan: starter  # starter, standard, pro, pro-plus, pro-max

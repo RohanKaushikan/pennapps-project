@@ -1,0 +1,25 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "scripts/entrypoint.sh web"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
+
+[env]
+ENVIRONMENT = "production"
+DEBUG = "false"
+LOG_LEVEL = "INFO"
+METRICS_ENABLED = "true"
+SECURITY_HEADERS_ENABLED = "true"
+CORS_ENABLED = "true"
+AUTO_MIGRATE = "true"
+WORKERS = "2"
+
+# Railway will automatically set:
+# - PORT
+# - DATABASE_URL (if using Railway PostgreSQL addon)
+# - REDIS_URL (if using Railway Redis addon)

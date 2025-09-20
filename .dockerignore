@@ -1,0 +1,75 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+venv
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.tox
+.coverage
+.pytest_cache
+htmlcov
+
+# IDEs
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Node.js (if any frontend assets)
+node_modules/
+npm-debug.log*
+
+# Temporary files
+*.tmp
+*.temp
+
+# Documentation
+*.md
+docs/
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Environment files (should not be in container)
+.env.local
+.env.development
+.env.production
+
+# Database
+*.db
+*.sqlite
+
+# Backups
+*.bak
+*.backup
+
+# Development tools
+.pre-commit-config.yaml
+mypy.ini
+pytest.ini
+setup.cfg
+tox.ini
