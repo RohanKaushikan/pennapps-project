@@ -6,18 +6,42 @@ export default function TravelWelcomeApp() {
   const [activeTab, setActiveTab] = useState('welcome')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [selectedCountry, setSelectedCountry] = useState('NP')
+  const [availableCountries, setAvailableCountries] = useState([])
 
-  // Function to fetch country data from backend
-  const fetchCountryData = async () => {
+  // Function to fetch available countries
+  const fetchCountries = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/country-info')
+      console.log('Fetching countries from:', 'http://localhost:8000/api/countries')
+      const response = await fetch('http://localhost:8000/api/countries')
+      console.log('Countries response status:', response.status)
       if (!response.ok) {
-        throw new Error('Failed to fetch country data')
+        throw new Error(`Failed to fetch countries: ${response.status}`)
       }
       const data = await response.json()
+      console.log('Countries data:', data)
+      return data.countries
+    } catch (error) {
+      console.error('Error fetching countries:', error)
+      return []
+    }
+  }
+
+  // Function to fetch country data from backend
+  const fetchCountryData = async (countryCode = 'NP') => {
+    try {
+      const url = `http://localhost:8000/api/country-info?country_code=${countryCode}`
+      console.log('Fetching country data from:', url)
+      const response = await fetch(url)
+      console.log('Country data response status:', response.status)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch country data: ${response.status}`)
+      }
+      const data = await response.json()
+      console.log('Country data:', data)
       return data
     } catch (error) {
-      console.error('Error:', error)
+      console.error('Error fetching country data:', error)
       throw error
     }
   }
@@ -26,10 +50,16 @@ export default function TravelWelcomeApp() {
   useEffect(() => {
     const initApp = async () => {
       try {
-        const data = await fetchCountryData()
+        setLoading(true)
+        setError(null) // Clear any previous errors
+        const countries = await fetchCountries()
+        setAvailableCountries(countries)
+        
+        const data = await fetchCountryData(selectedCountry)
         setCountryData(data)
         setLoading(false)
       } catch (error) {
+        console.error('Error initializing app:', error)
         setError('Failed to load country information. Please try again later.')
         setLoading(false)
       }
@@ -37,6 +67,22 @@ export default function TravelWelcomeApp() {
 
     initApp()
   }, [])
+
+  // Handle country selection
+  const handleCountryChange = async (countryCode) => {
+    try {
+      setLoading(true)
+      setError(null) // Clear any previous errors
+      setSelectedCountry(countryCode)
+      const data = await fetchCountryData(countryCode)
+      setCountryData(data)
+      setLoading(false)
+    } catch (error) {
+      console.error('Error changing country:', error)
+      setError('Failed to load country information. Please try again later.')
+      setLoading(false)
+    }
+  }
 
   // Loading spinner component
   const LoadingSpinner = () => (
@@ -53,8 +99,8 @@ export default function TravelWelcomeApp() {
   )
 
   // Tab content components
-  const WelcomeTab = ({ welcome }) => (
-    <div className="tab-content active">
+  const WelcomeTab = ({ welcome, isActive }) => (
+    <div className={`tab-content ${isActive ? 'active' : ''}`}>
       {welcome?.map((item, index) => (
         <div key={index} className="card">
           <div className="info-item">
@@ -69,8 +115,8 @@ export default function TravelWelcomeApp() {
     </div>
   )
 
-  const TransportTab = ({ transport }) => (
-    <div className="tab-content">
+  const TransportTab = ({ transport, isActive }) => (
+    <div className={`tab-content ${isActive ? 'active' : ''}`}>
       <div className="card">
         <h3 className="title">Transportation Tips</h3>
         {transport?.map((tip, index) => (
@@ -83,8 +129,8 @@ export default function TravelWelcomeApp() {
     </div>
   )
 
-  const CultureTab = ({ culture }) => (
-    <div className="tab-content">
+  const CultureTab = ({ culture, isActive }) => (
+    <div className={`tab-content ${isActive ? 'active' : ''}`}>
       <div className="card">
         <h3 className="title">Cultural Guidelines</h3>
         {culture?.map((tip, index) => (
@@ -97,8 +143,8 @@ export default function TravelWelcomeApp() {
     </div>
   )
 
-  const LanguageTab = ({ language }) => (
-    <div className="tab-content">
+  const LanguageTab = ({ language, isActive }) => (
+    <div className={`tab-content ${isActive ? 'active' : ''}`}>
       <div className="card">
         <h3 className="title">Essential Phrases</h3>
         {language?.map((phrase, index) => (
@@ -114,18 +160,14 @@ export default function TravelWelcomeApp() {
   const renderTabContent = () => {
     if (!countryData) return null
 
-    switch (activeTab) {
-      case 'welcome':
-        return <WelcomeTab welcome={countryData.welcome} />
-      case 'transport':
-        return <TransportTab transport={countryData.transport} />
-      case 'culture':
-        return <CultureTab culture={countryData.culture} />
-      case 'language':
-        return <LanguageTab language={countryData.language} />
-      default:
-        return <WelcomeTab welcome={countryData.welcome} />
-    }
+    return (
+      <>
+        <WelcomeTab welcome={countryData.welcome} isActive={activeTab === 'welcome'} />
+        <TransportTab transport={countryData.transport} isActive={activeTab === 'transport'} />
+        <CultureTab culture={countryData.culture} isActive={activeTab === 'culture'} />
+        <LanguageTab language={countryData.language} isActive={activeTab === 'language'} />
+      </>
+    )
   }
 
   return (
@@ -201,6 +243,10 @@ export default function TravelWelcomeApp() {
         }
 
         .tab-content {
+          display: none;
+        }
+
+        .tab-content.active {
           display: block;
         }
 
@@ -293,6 +339,27 @@ export default function TravelWelcomeApp() {
           margin: 20px;
           border: 1px solid #fecaca;
         }
+
+        .country-selector {
+          margin-top: 8px;
+          padding: 6px 12px;
+          border-radius: 8px;
+          border: 1px solid rgba(255, 255, 255, 0.3);
+          background: rgba(255, 255, 255, 0.2);
+          color: white;
+          font-size: 0.875rem;
+          cursor: pointer;
+        }
+
+        .country-selector:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .country-selector option {
+          background: #1f2937;
+          color: white;
+        }
       `}</style>
 
       {/* Header */}
@@ -301,6 +368,20 @@ export default function TravelWelcomeApp() {
           <div>
             <h1>Welcome</h1>
             <p>{loading ? 'Loading...' : countryData?.name || 'Unknown Location'}</p>
+            {availableCountries.length > 0 && (
+              <select 
+                value={selectedCountry} 
+                onChange={(e) => handleCountryChange(e.target.value)}
+                className="country-selector"
+                disabled={loading}
+              >
+                {availableCountries.map(country => (
+                  <option key={country.code} value={country.code}>
+                    {country.flag} {country.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </div>
           <div>
             <Bell size={24} />

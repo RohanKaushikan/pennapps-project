@@ -24,7 +24,7 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003", "http://localhost:3004"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -89,6 +89,145 @@ COUNTRIES = {
     }
 }
 
+# Travel information data for each country
+TRAVEL_DATA = {
+    "NP": {
+        "name": "Nepal",
+        "welcome": [
+            {
+                "icon": "🏔️",
+                "title": "Welcome to Nepal!",
+                "message": "Namaste! Your adventure in the Himalayas begins here."
+            },
+            {
+                "icon": "🙏",
+                "title": "Cultural Experience",
+                "message": "Discover ancient temples, vibrant festivals, and warm hospitality."
+            }
+        ],
+        "transport": [
+            "Domestic flights connect major cities - book in advance",
+            "Local buses are cheap but can be crowded and slow",
+            "Taxis are available in cities - negotiate fare before boarding",
+            "Walking is common in Kathmandu - watch for traffic"
+        ],
+        "culture": [
+            "Remove shoes before entering temples and homes",
+            "Use your right hand for eating and giving/receiving items",
+            "Dress modestly, especially when visiting religious sites",
+            "Respect the local customs and traditions"
+        ],
+        "language": [
+            {
+                "native": "नमस्ते (Namaste)",
+                "meaning": "Hello / Goodbye (with folded hands)"
+            },
+            {
+                "native": "धन्यवाद (Dhanyabad)",
+                "meaning": "Thank you"
+            },
+            {
+                "native": "माफ गर्नुहोस् (Maaf garnuhos)",
+                "meaning": "Excuse me / Sorry"
+            },
+            {
+                "native": "अंग्रेजी बोल्नुहुन्छ? (Angreji bolnuhunchha?)",
+                "meaning": "Do you speak English?"
+            }
+        ]
+    },
+    "IT": {
+        "name": "Italy",
+        "welcome": [
+            {
+                "icon": "🍝",
+                "title": "Benvenuto in Italia!",
+                "message": "Welcome to Italy! Experience art, history, and incredible cuisine."
+            },
+            {
+                "icon": "🏛️",
+                "title": "Cultural Heritage",
+                "message": "Explore ancient ruins, Renaissance art, and charming villages."
+            }
+        ],
+        "transport": [
+            "High-speed trains (Frecciarossa) connect major cities efficiently",
+            "Regional trains are slower but more affordable",
+            "Metro systems in Rome, Milan, and Naples",
+            "Taxis are expensive - use apps like Uber or local services"
+        ],
+        "culture": [
+            "Dress well - Italians take pride in appearance",
+            "Greet with a kiss on both cheeks among friends",
+            "Don't order cappuccino after 11 AM - it's considered odd",
+            "Tipping is not mandatory but appreciated for good service"
+        ],
+        "language": [
+            {
+                "native": "Ciao",
+                "meaning": "Hello / Goodbye (informal)"
+            },
+            {
+                "native": "Grazie",
+                "meaning": "Thank you"
+            },
+            {
+                "native": "Scusi",
+                "meaning": "Excuse me"
+            },
+            {
+                "native": "Parla inglese?",
+                "meaning": "Do you speak English?"
+            }
+        ]
+    },
+    "RU": {
+        "name": "Russia",
+        "welcome": [
+            {
+                "icon": "❄️",
+                "title": "Добро пожаловать в Россию!",
+                "message": "Welcome to Russia! Discover vast landscapes and rich culture."
+            },
+            {
+                "icon": "🏰",
+                "title": "Historical Heritage",
+                "message": "Explore magnificent palaces, museums, and architectural wonders."
+            }
+        ],
+        "transport": [
+            "Metro systems in major cities are efficient and beautiful",
+            "Long-distance trains connect cities across the country",
+            "Marshrutkas (minibuses) are common for local transport",
+            "Taxis can be ordered via apps like Yandex.Taxi"
+        ],
+        "culture": [
+            "Remove outdoor shoes when entering homes",
+            "Bring flowers (odd numbers only) when visiting someone",
+            "Don't shake hands across a threshold - it's considered bad luck",
+            "Dress formally for cultural events and restaurants"
+        ],
+        "language": [
+            {
+                "native": "Привет (Privet)",
+                "meaning": "Hello (informal)"
+            },
+            {
+                "native": "Спасибо (Spasibo)",
+                "meaning": "Thank you"
+            },
+            {
+                "native": "Извините (Izvinite)",
+                "meaning": "Excuse me / Sorry"
+            },
+            {
+                "native": "Вы говорите по-английски? (Vy govorite po-angliyski?)",
+                "meaning": "Do you speak English?"
+            }
+        ]
+    }
+}
+
 # Pydantic models
 class NewsItem(BaseModel):
     id: str
@@ -112,6 +251,22 @@ class HealthResponse(BaseModel):
     status: str
     message: str
     data_points: int
+
+class WelcomeItem(BaseModel):
+    icon: str
+    title: str
+    message: str
+
+class LanguagePhrase(BaseModel):
+    native: str
+    meaning: str
+
+class CountryInfo(BaseModel):
+    name: str
+    welcome: List[WelcomeItem]
+    transport: List[str]
+    culture: List[str]
+    language: List[LanguagePhrase]
 
 def fetch_rss_feed(url: str) -> List[Dict]:
     """Fetch and parse RSS feed"""
@@ -298,6 +453,14 @@ async def get_countries():
             for code, config in COUNTRIES.items()
         ]
     }
+
+@app.get("/api/country-info", response_model=CountryInfo)
+async def get_country_info(country_code: str = "NP"):
+    """Get travel information for a specific country"""
+    if country_code not in TRAVEL_DATA:
+        raise HTTPException(status_code=404, detail="Country not found")
+    
+    return CountryInfo(**TRAVEL_DATA[country_code])
 
 @app.get("/api/anomalies")
 async def get_anomalies() -> List[AnomalyAlert]:
