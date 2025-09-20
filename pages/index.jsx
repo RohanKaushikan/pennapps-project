@@ -1,240 +1,415 @@
 import { useState, useEffect } from 'react'
+import { Bell, Loader } from 'lucide-react'
 
-export default function Home() {
-  const [count, setCount] = useState(0)
-  const [mlData, setMlData] = useState({
-    isTrained: false,
-    prediction: null,
-    confidence: null,
-    loading: false,
-    error: null
-  })
-  const [inputValue, setInputValue] = useState('0.5')
+export default function TravelWelcomeApp() {
+  const [countryData, setCountryData] = useState(null)
+  const [activeTab, setActiveTab] = useState('welcome')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
-  // API functions
-  const trainModel = async () => {
-    setMlData(prev => ({ ...prev, loading: true, error: null }))
+  // Function to fetch country data from backend
+  const fetchCountryData = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/train', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      })
-      const data = await response.json()
-      if (response.ok) {
-        setMlData(prev => ({ ...prev, isTrained: true, loading: false }))
-      } else {
-        throw new Error(data.detail || 'Training failed')
+      const response = await fetch('http://localhost:8000/api/country-info')
+      if (!response.ok) {
+        throw new Error('Failed to fetch country data')
       }
+      const data = await response.json()
+      return data
     } catch (error) {
-      setMlData(prev => ({ ...prev, error: error.message, loading: false }))
+      console.error('Error:', error)
+      throw error
     }
   }
 
-  const makePrediction = async () => {
-    if (!mlData.isTrained) {
-      setMlData(prev => ({ ...prev, error: 'Please train the model first' }))
-      return
-    }
-    
-    setMlData(prev => ({ ...prev, loading: true, error: null }))
-    try {
-      const response = await fetch('http://localhost:8000/api/predict', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          features: [parseFloat(inputValue)],
-          model_type: 'linear_regression'
-        })
-      })
-      const data = await response.json()
-      if (response.ok) {
-        setMlData(prev => ({
-          ...prev,
-          prediction: data.prediction,
-          confidence: data.confidence,
-          loading: false
-        }))
-      } else {
-        throw new Error(data.detail || 'Prediction failed')
+  // Initialize the app
+  useEffect(() => {
+    const initApp = async () => {
+      try {
+        const data = await fetchCountryData()
+        setCountryData(data)
+        setLoading(false)
+      } catch (error) {
+        setError('Failed to load country information. Please try again later.')
+        setLoading(false)
       }
-    } catch (error) {
-      setMlData(prev => ({ ...prev, error: error.message, loading: false }))
     }
-  }
 
-  const resetModel = async () => {
-    setMlData(prev => ({ ...prev, loading: true, error: null }))
-    try {
-      const response = await fetch('http://localhost:8000/api/reset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      })
-      if (response.ok) {
-        setMlData({
-          isTrained: false,
-          prediction: null,
-          confidence: null,
-          loading: false,
-          error: null
-        })
-      }
-    } catch (error) {
-      setMlData(prev => ({ ...prev, error: error.message, loading: false }))
+    initApp()
+  }, [])
+
+  // Loading spinner component
+  const LoadingSpinner = () => (
+    <div className="flex justify-center items-center py-20">
+      <div className="loader"></div>
+    </div>
+  )
+
+  // Error message component
+  const ErrorMessage = ({ message }) => (
+    <div className="error-message">
+      {message}
+    </div>
+  )
+
+  // Tab content components
+  const WelcomeTab = ({ welcome }) => (
+    <div className="tab-content active">
+      {welcome?.map((item, index) => (
+        <div key={index} className="card">
+          <div className="info-item">
+            <div>{item.icon}</div>
+            <div style={{ marginLeft: '10px' }}>
+              <h3>{item.title}</h3>
+              <p style={{ color: '#666' }}>{item.message}</p>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+
+  const TransportTab = ({ transport }) => (
+    <div className="tab-content">
+      <div className="card">
+        <h3 className="title">Transportation Tips</h3>
+        {transport?.map((tip, index) => (
+          <div key={index} className="info-item">
+            <div className="dot"></div>
+            <div>{tip}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+
+  const CultureTab = ({ culture }) => (
+    <div className="tab-content">
+      <div className="card">
+        <h3 className="title">Cultural Guidelines</h3>
+        {culture?.map((tip, index) => (
+          <div key={index} className="info-item">
+            <div className="dot"></div>
+            <div>{tip}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+
+  const LanguageTab = ({ language }) => (
+    <div className="tab-content">
+      <div className="card">
+        <h3 className="title">Essential Phrases</h3>
+        {language?.map((phrase, index) => (
+          <div key={index} className="phrase">
+            <div className="phrase-native">{phrase.native}</div>
+            <div className="phrase-meaning">{phrase.meaning}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+
+  const renderTabContent = () => {
+    if (!countryData) return null
+
+    switch (activeTab) {
+      case 'welcome':
+        return <WelcomeTab welcome={countryData.welcome} />
+      case 'transport':
+        return <TransportTab transport={countryData.transport} />
+      case 'culture':
+        return <CultureTab culture={countryData.culture} />
+      case 'language':
+        return <LanguageTab language={countryData.language} />
+      default:
+        return <WelcomeTab welcome={countryData.welcome} />
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center p-4">
-      <div className="bg-white/95 backdrop-blur-sm rounded-3xl shadow-2xl p-8 max-w-2xl w-full mx-4">
-        <header className="text-center">
-          <h1 className="text-4xl md:text-5xl font-bold text-gray-800 mb-4">
-            Welcome to Next.js!
-          </h1>
-          <p className="text-lg text-gray-600 mb-8 leading-relaxed">
-            This is a basic Next.js webapp created for you.
-          </p>
-          
-          <div className="bg-gray-50 rounded-2xl p-6 mb-8 border-2 border-gray-200">
-            <p className="text-xl font-semibold text-gray-700 mb-4">
-              You clicked the button {count} times
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center">
-              <button 
-                className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-8 py-3 rounded-full font-semibold hover:from-indigo-600 hover:to-purple-700 transform hover:-translate-y-1 transition-all duration-300 shadow-lg hover:shadow-xl"
-                onClick={() => setCount(count + 1)}
-              >
-                Click me!
-              </button>
-              <button 
-                className="bg-gradient-to-r from-red-500 to-pink-600 text-white px-8 py-3 rounded-full font-semibold hover:from-red-600 hover:to-pink-700 transform hover:-translate-y-1 transition-all duration-300 shadow-lg hover:shadow-xl"
-                onClick={() => setCount(0)}
-              >
-                Reset
-              </button>
-            </div>
+    <div style={{ backgroundColor: '#f3f4f6', minHeight: '100vh' }}>
+      <style>{`
+        .header {
+          background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+          color: white;
+          padding: 24px;
+          border-radius: 0 0 24px 24px;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .header-content {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          max-width: 28rem;
+          margin: 0 auto;
+        }
+
+        .header h1 {
+          font-size: 1.5rem;
+          font-weight: bold;
+          margin: 0 0 4px 0;
+        }
+
+        .header p {
+          font-size: 0.875rem;
+          opacity: 0.9;
+          margin: 0;
+        }
+
+        .tabs {
+          display: flex;
+          background: rgba(255, 255, 255, 0.5);
+          margin: 16px;
+          border-radius: 16px;
+          padding: 4px;
+          border: 1px solid #d1d5db;
+          max-width: 28rem;
+          margin: 16px auto;
+        }
+
+        .tab-button {
+          flex: 1;
+          padding: 12px 16px;
+          border-radius: 12px;
+          font-weight: 500;
+          transition: all 0.2s;
+          background: none;
+          border: none;
+          cursor: pointer;
+          font-size: 0.875rem;
+          color: #6b7280;
+        }
+
+        .tab-button.active {
+          background: white;
+          color: #1f2937;
+          box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+          border: 1px solid #d1d5db;
+        }
+
+        .tab-button:hover:not(.active) {
+          background: rgba(255, 255, 255, 0.5);
+        }
+
+        .content-area {
+          padding: 0 16px 24px;
+          max-width: 28rem;
+          margin: 0 auto;
+        }
+
+        .tab-content {
+          display: block;
+        }
+
+        .card {
+          background: white;
+          border-radius: 16px;
+          padding: 20px;
+          margin-bottom: 16px;
+          box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+          border: 1px solid #e5e7eb;
+        }
+
+        .info-item {
+          display: flex;
+          align-items: flex-start;
+          padding: 12px 0;
+        }
+
+        .info-item h3 {
+          font-weight: 600;
+          color: #1f2937;
+          margin: 0 0 4px 0;
+        }
+
+        .info-item p {
+          margin: 0;
+          font-size: 0.875rem;
+        }
+
+        .title {
+          font-size: 1.125rem;
+          font-weight: bold;
+          margin-bottom: 16px;
+          color: #1f2937;
+          display: flex;
+          align-items: center;
+        }
+
+        .dot {
+          width: 8px;
+          height: 8px;
+          background: #3b82f6;
+          border-radius: 50%;
+          margin-right: 12px;
+          margin-top: 6px;
+          flex-shrink: 0;
+        }
+
+        .phrase {
+          padding: 12px 0;
+          border-bottom: 1px solid #f3f4f6;
+        }
+
+        .phrase:last-child {
+          border-bottom: none;
+        }
+
+        .phrase-native {
+          font-weight: 600;
+          color: #1f2937;
+          margin-bottom: 4px;
+        }
+
+        .phrase-meaning {
+          font-size: 0.875rem;
+          color: #6b7280;
+        }
+
+        .loader {
+          border: 4px solid #f3f3f3;
+          border-radius: 50%;
+          border-top: 4px solid #2563eb;
+          width: 40px;
+          height: 40px;
+          animation: spin 1s linear infinite;
+          margin: 20px auto;
+        }
+
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+
+        .error-message {
+          color: #dc2626;
+          text-align: center;
+          padding: 20px;
+          background: #fef2f2;
+          border-radius: 8px;
+          margin: 20px;
+          border: 1px solid #fecaca;
+        }
+      `}</style>
+
+      {/* Header */}
+      <div className="header">
+        <div className="header-content">
+          <div>
+            <h1>Welcome</h1>
+            <p>{loading ? 'Loading...' : countryData?.name || 'Unknown Location'}</p>
           </div>
-          
-          {/* ML Section */}
-          <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-6 mb-8 border-2 border-blue-200">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">🤖 Machine Learning Demo</h2>
-            
-            {/* Model Status */}
-            <div className="mb-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-600">Model Status:</span>
-                <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                  mlData.isTrained 
-                    ? 'bg-green-100 text-green-800' 
-                    : 'bg-yellow-100 text-yellow-800'
-                }`}>
-                  {mlData.isTrained ? '✅ Trained' : '⏳ Not Trained'}
-                </span>
-              </div>
-            </div>
-
-            {/* Training Section */}
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-gray-700 mb-3">Train Model</h3>
-              <button 
-                className="bg-gradient-to-r from-green-500 to-emerald-600 text-white px-6 py-2 rounded-full font-semibold hover:from-green-600 hover:to-emerald-700 transform hover:-translate-y-1 transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={trainModel}
-                disabled={mlData.loading}
-              >
-                {mlData.loading ? '⏳ Training...' : '🚀 Train Model'}
-              </button>
-            </div>
-
-            {/* Prediction Section */}
-            <div className="mb-6">
-              <h3 className="text-lg font-semibold text-gray-700 mb-3">Make Prediction</h3>
-              <div className="flex flex-col sm:flex-row gap-3 mb-3">
-                <input
-                  type="number"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  placeholder="Enter a number (e.g., 0.5)"
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  step="0.1"
-                />
-                <button 
-                  className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-2 rounded-full font-semibold hover:from-blue-600 hover:to-indigo-700 transform hover:-translate-y-1 transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-                  onClick={makePrediction}
-                  disabled={mlData.loading || !mlData.isTrained}
-                >
-                  {mlData.loading ? '⏳ Predicting...' : '🔮 Predict'}
-                </button>
-              </div>
-              
-              {/* Prediction Results */}
-              {mlData.prediction !== null && (
-                <div className="bg-white rounded-lg p-4 border border-gray-200">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <span className="text-sm font-medium text-gray-600">Prediction:</span>
-                      <p className="text-xl font-bold text-blue-600">{mlData.prediction.toFixed(4)}</p>
-                    </div>
-                    <div>
-                      <span className="text-sm font-medium text-gray-600">Confidence:</span>
-                      <p className="text-xl font-bold text-green-600">{(mlData.confidence * 100).toFixed(1)}%</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Reset Section */}
-            <div className="flex justify-between items-center">
-              <button 
-                className="bg-gradient-to-r from-red-500 to-pink-600 text-white px-4 py-2 rounded-full font-semibold hover:from-red-600 hover:to-pink-700 transform hover:-translate-y-1 transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
-                onClick={resetModel}
-                disabled={mlData.loading}
-              >
-                🔄 Reset Model
-              </button>
-              
-              {mlData.error && (
-                <div className="text-red-600 text-sm bg-red-50 px-3 py-2 rounded-lg border border-red-200">
-                  ⚠️ {mlData.error}
-                </div>
-              )}
-            </div>
+          <div>
+            <Bell size={24} />
           </div>
-
-          <div className="bg-gray-50 rounded-2xl p-6 border-2 border-gray-200">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">Features included:</h2>
-            <ul className="space-y-2 text-left">
-              <li className="flex items-center text-gray-700">
-                <span className="text-green-500 mr-2">✅</span>
-                Next.js 14 with App Router
-              </li>
-              <li className="flex items-center text-gray-700">
-                <span className="text-green-500 mr-2">✅</span>
-                React 18 with hooks
-              </li>
-              <li className="flex items-center text-gray-700">
-                <span className="text-green-500 mr-2">✅</span>
-                Tailwind CSS styling
-              </li>
-              <li className="flex items-center text-gray-700">
-                <span className="text-green-500 mr-2">✅</span>
-                Python FastAPI backend
-              </li>
-              <li className="flex items-center text-gray-700">
-                <span className="text-green-500 mr-2">✅</span>
-                Machine Learning integration
-              </li>
-              <li className="flex items-center text-gray-700">
-                <span className="text-green-500 mr-2">✅</span>
-                Real-time API communication
-              </li>
-              <li className="flex items-center text-gray-700">
-                <span className="text-green-500 mr-2">✅</span>
-                No HTML file needed!
-              </li>
-            </ul>
-          </div>
-        </header>
+        </div>
       </div>
+
+      {/* Navigation Tabs */}
+      <div className="tabs">
+        <button
+          className={`tab-button ${activeTab === 'welcome' ? 'active' : ''}`}
+          onClick={() => setActiveTab('welcome')}
+        >
+          Welcome
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'transport' ? 'active' : ''}`}
+          onClick={() => setActiveTab('transport')}
+        >
+          Transport
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'culture' ? 'active' : ''}`}
+          onClick={() => setActiveTab('culture')}
+        >
+          Culture
+        </button>
+        <button
+          className={`tab-button ${activeTab === 'language' ? 'active' : ''}`}
+          onClick={() => setActiveTab('language')}
+        >
+          Language
+        </button>
+      </div>
+
+      {/* Content Area */}
+      <div className="content-area">
+        {loading && <LoadingSpinner />}
+        {error && <ErrorMessage message={error} />}
+        {!loading && !error && renderTabContent()}
+      </div>
+
+      {/* Demo Data - Remove when connecting to real backend */}
+      {!loading && !error && !countryData && (
+        <div className="content-area">
+          <div className="card">
+            <h3>Demo Mode</h3>
+            <p>This app is running in demo mode. Connect to your backend API to see real country data.</p>
+            <button
+              onClick={() => {
+                // Simulate loading demo data
+                setLoading(true)
+                setTimeout(() => {
+                  setCountryData({
+                    name: "Japan",
+                    welcome: [
+                      {
+                        icon: "🎌",
+                        title: "Welcome to Japan!",
+                        message: "Konnichiwa! Your travel companion is ready to help."
+                      },
+                      {
+                        icon: "🏮",
+                        title: "Cultural Experience",
+                        message: "Discover the rich traditions and modern innovations of Japan."
+                      }
+                    ],
+                    transport: [
+                      "IC cards work on all trains and subways",
+                      "Follow blue signs for domestic, red for international",
+                      "Shinkansen (bullet train) requires reserved seats for long distances",
+                      "Taxis are expensive but very reliable and clean"
+                    ],
+                    culture: [
+                      "Remove shoes when entering homes and some restaurants",
+                      "Bowing is customary - a slight nod is perfectly acceptable",
+                      "Keep voices low on public transportation",
+                      "Cash is still king - many places don't accept cards"
+                    ],
+                    language: [
+                      {
+                        native: "こんにちは (Konnichiwa)",
+                        meaning: "Hello (formal greeting)"
+                      },
+                      {
+                        native: "ありがとうございます (Arigatou gozaimasu)",
+                        meaning: "Thank you very much"
+                      },
+                      {
+                        native: "すみません (Sumimasen)",
+                        meaning: "Excuse me / I'm sorry"
+                      },
+                      {
+                        native: "英語を話せますか？ (Eigo wo hanasemasu ka?)",
+                        meaning: "Do you speak English?"
+                      }
+                    ]
+                  })
+                  setLoading(false)
+                }, 1000)
+              }}
+              className="tab-button active"
+              style={{ width: '100%', marginTop: '10px' }}
+            >
+              Load Demo Data
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -134,6 +134,90 @@ async def reset_model():
     trained_model = None
     return {"message": "Model reset successfully"}
 
+# Travel app endpoints
+@app.get("/api/country-info")
+async def get_country_info():
+    """Get country information for travel app"""
+    # This is demo data - replace with real data source
+    return {
+        "name": "Japan",
+        "welcome": [
+            {
+                "icon": "🎌",
+                "title": "Welcome to Japan!",
+                "message": "Konnichiwa! Your travel companion is ready to help."
+            },
+            {
+                "icon": "🏮",
+                "title": "Cultural Experience",
+                "message": "Discover the rich traditions and modern innovations of Japan."
+            },
+            {
+                "icon": "🍱",
+                "title": "Culinary Adventure",
+                "message": "From sushi to ramen, explore Japan's incredible food culture."
+            }
+        ],
+        "transport": [
+            "IC cards work on all trains and subways",
+            "Follow blue signs for domestic, red for international",
+            "Shinkansen (bullet train) requires reserved seats for long distances",
+            "Taxis are expensive but very reliable and clean",
+            "JR Pass available for tourists - great value for long-distance travel",
+            "Download Google Maps or Hyperdia for train schedules"
+        ],
+        "culture": [
+            "Remove shoes when entering homes and some restaurants",
+            "Bowing is customary - a slight nod is perfectly acceptable",
+            "Keep voices low on public transportation",
+            "Cash is still king - many places don't accept cards",
+            "Don't eat or drink while walking",
+            "Gift-giving is important - bring small gifts from your country"
+        ],
+        "language": [
+            {
+                "native": "こんにちは (Konnichiwa)",
+                "meaning": "Hello (formal greeting)"
+            },
+            {
+                "native": "ありがとうございます (Arigatou gozaimasu)",
+                "meaning": "Thank you very much"
+            },
+            {
+                "native": "すみません (Sumimasen)",
+                "meaning": "Excuse me / I'm sorry"
+            },
+            {
+                "native": "英語を話せますか？ (Eigo wo hanasemasu ka?)",
+                "meaning": "Do you speak English?"
+            },
+            {
+                "native": "おいくらですか？ (Oikura desu ka?)",
+                "meaning": "How much does it cost?"
+            },
+            {
+                "native": "トイレはどこですか？ (Toire wa doko desu ka?)",
+                "meaning": "Where is the bathroom?"
+            }
+        ]
+    }
+
+@app.get("/api/countries")
+async def get_countries():
+    """Get list of available countries"""
+    return {
+        "countries": [
+            {"code": "JP", "name": "Japan", "flag": "🇯🇵"},
+            {"code": "KR", "name": "South Korea", "flag": "🇰🇷"},
+            {"code": "TH", "name": "Thailand", "flag": "🇹🇭"},
+            {"code": "SG", "name": "Singapore", "flag": "🇸🇬"},
+            {"code": "FR", "name": "France", "flag": "🇫🇷"},
+            {"code": "IT", "name": "Italy", "flag": "🇮🇹"},
+            {"code": "ES", "name": "Spain", "flag": "🇪🇸"},
+            {"code": "DE", "name": "Germany", "flag": "🇩🇪"}
+        ]
+    }
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
