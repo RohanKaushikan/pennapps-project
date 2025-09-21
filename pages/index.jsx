@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { Bell, Loader } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Bell, Loader, MapPin, Eye, EyeOff, Plane, AlertTriangle } from 'lucide-react'
 
 export default function TravelWelcomeApp() {
   const [countryData, setCountryData] = useState(null)
@@ -9,12 +9,21 @@ export default function TravelWelcomeApp() {
   const [selectedCountry, setSelectedCountry] = useState('NP')
   const [availableCountries, setAvailableCountries] = useState([])
   const [alerts, setAlerts] = useState(null)
+  
+  // Location simulation state
+  const [currentLocation, setCurrentLocation] = useState(null)
+  const [showDemoPanel, setShowDemoPanel] = useState(false)
+  const [dKeyCount, setDKeyCount] = useState(0)
+  const [showLocationAlerts, setShowLocationAlerts] = useState(false)
+  const [locationAlerts, setLocationAlerts] = useState(null)
+  const [isBackgroundMode, setIsBackgroundMode] = useState(true)
+  const dKeyTimeoutRef = useRef(null)
 
   // Function to fetch available countries
   const fetchCountries = async () => {
     try {
-      console.log('Fetching countries from:', 'http://localhost:8000/api/countries')
-      const response = await fetch('http://localhost:8000/api/countries')
+      console.log('Fetching countries from:', 'http://localhost:8001/api/countries')
+      const response = await fetch('http://localhost:8001/api/countries')
       console.log('Countries response status:', response.status)
       if (!response.ok) {
         throw new Error(`Failed to fetch countries: ${response.status}`)
@@ -31,7 +40,7 @@ export default function TravelWelcomeApp() {
   // Function to fetch country data from backend
   const fetchCountryData = async (countryCode = 'NP') => {
     try {
-      const url = `http://localhost:8000/api/country-info?country_code=${countryCode}`
+      const url = `http://localhost:8001/api/country-info?country_code=${countryCode}`
       console.log('Fetching country data from:', url)
       const response = await fetch(url)
       console.log('Country data response status:', response.status)
@@ -50,7 +59,7 @@ export default function TravelWelcomeApp() {
   // Function to fetch alerts/anomalies data
   const fetchAlerts = async () => {
     try {
-      const url = `http://localhost:8000/api/anomalies`
+      const url = `http://localhost:8001/api/anomalies`
       console.log('Fetching alerts from:', url)
       const response = await fetch(url)
       console.log('Alerts response status:', response.status)
@@ -66,6 +75,108 @@ export default function TravelWelcomeApp() {
     }
   }
 
+  // Location simulation functions
+  const simulateTravel = async (countryCode) => {
+    try {
+      const response = await fetch('/api/simulate-travel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ countryCode, action: 'setLocation' })
+      })
+      
+      const result = await response.json()
+      
+      if (result.success) {
+        setCurrentLocation(result.currentLocation)
+        
+        if (result.locationChanged && result.alerts) {
+          setLocationAlerts(result.alerts)
+          setShowLocationAlerts(true)
+          setIsBackgroundMode(false)
+          
+          // Request notification permission and show notification
+          if (Notification.permission === 'granted') {
+            const spikeFactor = result.alerts?.alerts?.[0]?.spike_factor || 1;
+            const alertLevel = spikeFactor >= 2 ? '🚨 CRITICAL' : spikeFactor >= 1.5 ? '⚠️ WARNING' : 'ℹ️ INFO';
+            
+            new Notification(`${alertLevel} - Entered ${result.alerts.country}`, {
+              body: spikeFactor >= 2 
+                ? `${spikeFactor}x more travel news than normal! Click to view details.`
+                : 'Travel alert detected! Click to view details.',
+              icon: '/favicon.ico',
+              tag: 'travel-alert',
+              requireInteraction: true
+            })
+          } else if (Notification.permission !== 'denied') {
+            Notification.requestPermission().then(permission => {
+              if (permission === 'granted') {
+                const spikeFactor = result.alerts?.alerts?.[0]?.spike_factor || 1;
+                const alertLevel = spikeFactor >= 2 ? '🚨 CRITICAL' : spikeFactor >= 1.5 ? '⚠️ WARNING' : 'ℹ️ INFO';
+                
+                new Notification(`${alertLevel} - Entered ${result.alerts.country}`, {
+                  body: spikeFactor >= 2 
+                    ? `${spikeFactor}x more travel news than normal! Click to view details.`
+                    : 'Travel alert detected! Click to view details.',
+                  icon: '/favicon.ico',
+                  tag: 'travel-alert',
+                  requireInteraction: true
+                })
+              }
+            })
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error simulating travel:', error)
+    }
+  }
+
+  const getCurrentLocation = async () => {
+    try {
+      const response = await fetch('/api/simulate-travel')
+      const result = await response.json()
+      if (result.success) {
+        setCurrentLocation(result.currentLocation)
+      }
+    } catch (error) {
+      console.error('Error getting current location:', error)
+    }
+  }
+
+  const dismissLocationAlerts = () => {
+    setShowLocationAlerts(false)
+    setLocationAlerts(null)
+    setIsBackgroundMode(true)
+  }
+
+  // Keyboard handler for demo panel
+  useEffect(() => {
+    const handleKeyPress = (e) => {
+      if (e.key.toLowerCase() === 'd') {
+        setDKeyCount(prev => prev + 1)
+        
+        // Clear existing timeout
+        if (dKeyTimeoutRef.current) {
+          clearTimeout(dKeyTimeoutRef.current)
+        }
+        
+        // Set new timeout
+        dKeyTimeoutRef.current = setTimeout(() => {
+          setDKeyCount(0)
+        }, 2000)
+        
+        // Show demo panel after 3 D presses
+        if (dKeyCount + 1 >= 3) {
+          setShowDemoPanel(true)
+          setDKeyCount(0)
+        }
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyPress)
+    return () => window.removeEventListener('keydown', handleKeyPress)
+  }, [dKeyCount])
+
   // Initialize the app
   useEffect(() => {
     const initApp = async () => {
@@ -80,6 +191,10 @@ export default function TravelWelcomeApp() {
 
         const alertsData = await fetchAlerts()
         setAlerts(alertsData)
+        
+        // Get current location from simulation
+        await getCurrentLocation()
+        
         setLoading(false)
       } catch (error) {
         console.error('Error initializing app:', error)
@@ -220,6 +335,139 @@ export default function TravelWelcomeApp() {
     )
   }
 
+  // Location Alerts Component
+  const LocationAlertsScreen = () => (
+    <div className="location-alerts-overlay">
+      <div className="location-alerts-container">
+        <div className="location-alerts-header">
+          <h2>{locationAlerts?.flag} {locationAlerts?.country} Travel Alerts</h2>
+          <button 
+            className="dismiss-button"
+            onClick={dismissLocationAlerts}
+          >
+            ✕
+          </button>
+        </div>
+        
+        <div className="location-alerts-content">
+          {locationAlerts?.alerts?.map((alert, index) => (
+            <div key={alert.id} className={`location-alert ${alert.level}`}>
+              <div className="alert-header">
+                <div className="alert-icon">
+                  {alert.level === 'critical' && <span style={{ fontSize: '20px' }}>🚨</span>}
+                  {alert.level === 'warning' && <span style={{ fontSize: '20px' }}>⚠️</span>}
+                  {alert.level === 'info' && <span style={{ fontSize: '20px' }}>ℹ️</span>}
+                </div>
+                <h3>{alert.title}</h3>
+                <span className={`alert-level ${alert.level}`}>
+                  {alert.level.toUpperCase()}
+                </span>
+              </div>
+              <p className="alert-message">{alert.message}</p>
+              <p className="alert-details">{alert.details}</p>
+              
+              {/* Show spike factor for anomaly alerts */}
+              {alert.spike_factor && (
+                <div className="spike-info">
+                  <strong>Spike Factor: {alert.spike_factor}x normal</strong>
+                  <span>Articles: {alert.current_count}</span>
+                </div>
+              )}
+              
+              {/* Show clickable link for news headlines */}
+              {alert.url && (
+                <a 
+                  href={alert.url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="news-link"
+                >
+                  Read full article →
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+        
+        <div className="location-alerts-footer">
+          <button 
+            className="acknowledge-button"
+            onClick={dismissLocationAlerts}
+          >
+            Acknowledge & Continue
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // Background Monitoring Component
+  const BackgroundMonitoringScreen = () => (
+    <div className="background-monitoring">
+      <div className="monitoring-header">
+        <div className="monitoring-icon">
+          <MapPin size={24} />
+        </div>
+        <div className="monitoring-text">
+          <h2>TravelLegal</h2>
+          <p>Running in background</p>
+        </div>
+        <div className="monitoring-status">
+          <div className="status-dot"></div>
+          <span>Monitoring active</span>
+        </div>
+      </div>
+      
+      <div className="current-location">
+        <p>Currently in: <strong>{currentLocation || 'Unknown'}</strong></p>
+      </div>
+      
+      <div className="monitoring-visualization">
+        <div className="pulse-ring"></div>
+        <div className="pulse-ring delay-1"></div>
+        <div className="pulse-ring delay-2"></div>
+      </div>
+      
+      {showDemoPanel && (
+        <div className="demo-panel">
+          <div className="demo-header">
+            <h3>Demo Controls</h3>
+            <button 
+              className="close-demo"
+              onClick={() => setShowDemoPanel(false)}
+            >
+              ✕
+            </button>
+          </div>
+          <div className="demo-buttons">
+            <button 
+              className="demo-button"
+              onClick={() => simulateTravel('NP')}
+            >
+              <Plane size={16} />
+              Travel to Nepal 🇳🇵
+            </button>
+            <button 
+              className="demo-button"
+              onClick={() => simulateTravel('IT')}
+            >
+              <Plane size={16} />
+              Travel to Italy 🇮🇹
+            </button>
+            <button 
+              className="demo-button"
+              onClick={() => simulateTravel('RU')}
+            >
+              <Plane size={16} />
+              Travel to Russia 🇷🇺
+            </button>
+          </div>
+          <p className="demo-hint">Press 'D' 3 times to toggle this panel</p>
+        </div>
+      )}
+    </div>
+  )
+
   const renderTabContent = () => {
     return (
       <>
@@ -233,6 +481,508 @@ export default function TravelWelcomeApp() {
           </>
         )}
       </>
+    )
+  }
+
+  // Show location alerts if they exist
+  if (showLocationAlerts && locationAlerts) {
+    return (
+      <div style={{ backgroundColor: '#f3f4f6', minHeight: '100vh' }}>
+        <style>{`
+        .location-alerts-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: linear-gradient(135deg, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.7) 100%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+          padding: 20px;
+          backdrop-filter: blur(10px);
+          animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+
+        .location-alerts-container {
+          background: linear-gradient(145deg, #ffffff 0%, #f8fafc 100%);
+          border-radius: 24px;
+          max-width: 600px;
+          width: 100%;
+          max-height: 85vh;
+          overflow: hidden;
+          box-shadow: 
+            0 25px 50px -12px rgba(0, 0, 0, 0.25),
+            0 0 0 1px rgba(255, 255, 255, 0.1);
+          animation: slideUp 0.4s ease-out;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        @keyframes slideUp {
+          from { 
+            opacity: 0;
+            transform: translateY(30px) scale(0.95);
+          }
+          to { 
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        .location-alerts-header {
+          background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+          color: white;
+          padding: 24px;
+          position: relative;
+          overflow: hidden;
+        }
+
+        .location-alerts-header::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="25" cy="25" r="1" fill="white" opacity="0.1"/><circle cx="75" cy="75" r="1" fill="white" opacity="0.1"/><circle cx="50" cy="10" r="0.5" fill="white" opacity="0.1"/><circle cx="10" cy="60" r="0.5" fill="white" opacity="0.1"/><circle cx="90" cy="40" r="0.5" fill="white" opacity="0.1"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
+          opacity: 0.3;
+        }
+
+        .location-alerts-header h2 {
+          margin: 0;
+          font-size: 1.5rem;
+          font-weight: 700;
+          position: relative;
+          z-index: 1;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+
+        .dismiss-button {
+          background: rgba(255, 255, 255, 0.2);
+          border: none;
+          color: white;
+          font-size: 1.5rem;
+          cursor: pointer;
+          padding: 8px;
+          border-radius: 50%;
+          width: 40px;
+          height: 40px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.2s ease;
+          position: relative;
+          z-index: 1;
+        }
+
+        .dismiss-button:hover {
+          background: rgba(255, 255, 255, 0.3);
+          transform: scale(1.1);
+        }
+
+        .location-alerts-content {
+          padding: 24px;
+          max-height: 50vh;
+          overflow-y: auto;
+        }
+
+        .location-alerts-content::-webkit-scrollbar {
+          width: 6px;
+        }
+
+        .location-alerts-content::-webkit-scrollbar-track {
+          background: #f1f5f9;
+          border-radius: 3px;
+        }
+
+        .location-alerts-content::-webkit-scrollbar-thumb {
+          background: #cbd5e1;
+          border-radius: 3px;
+        }
+
+        .location-alerts-content::-webkit-scrollbar-thumb:hover {
+          background: #94a3b8;
+        }
+
+        .location-alert {
+          margin-bottom: 20px;
+          padding: 20px;
+          border-radius: 16px;
+          border: 1px solid;
+          position: relative;
+          overflow: hidden;
+          transition: all 0.3s ease;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+          animation: slideInAlert 0.5s ease-out;
+        }
+
+        @keyframes slideInAlert {
+          from {
+            opacity: 0;
+            transform: translateX(-20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+
+        .location-alert:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 15px -3px rgba(0, 0, 0, 0.1);
+        }
+
+        .location-alert.critical {
+          background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+          border-color: #fecaca;
+          border-left: 4px solid #dc2626;
+        }
+
+        .location-alert.warning {
+          background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+          border-color: #fed7aa;
+          border-left: 4px solid #f59e0b;
+        }
+
+        .location-alert.info {
+          background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+          border-color: #bfdbfe;
+          border-left: 4px solid #3b82f6;
+        }
+
+        .alert-header {
+          display: flex;
+          align-items: center;
+          margin-bottom: 12px;
+        }
+
+        .alert-icon {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          background: rgba(0, 0, 0, 0.1);
+          margin-right: 12px;
+        }
+
+        .alert-header h3 {
+          margin: 0 12px;
+          font-size: 1.1rem;
+          color: #1f2937;
+          font-weight: 600;
+        }
+
+        .alert-level {
+          padding: 4px 12px;
+          border-radius: 20px;
+          font-size: 0.75rem;
+          font-weight: 700;
+          margin-left: auto;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .alert-level.critical {
+          background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+          color: white;
+          box-shadow: 0 2px 4px rgba(220, 38, 38, 0.3);
+        }
+
+        .alert-level.warning {
+          background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+          color: white;
+          box-shadow: 0 2px 4px rgba(245, 158, 11, 0.3);
+        }
+
+        .alert-level.info {
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          color: white;
+          box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+        }
+
+        .alert-message {
+          margin: 12px 0;
+          font-weight: 600;
+          color: #374151;
+          font-size: 1rem;
+          line-height: 1.5;
+        }
+
+        .alert-details {
+          margin: 8px 0 0 0;
+          font-size: 0.9rem;
+          color: #6b7280;
+          line-height: 1.4;
+        }
+
+        .spike-info {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-top: 12px;
+          padding: 12px 16px;
+          background: rgba(0, 0, 0, 0.05);
+          border-radius: 12px;
+          font-size: 0.9rem;
+          border: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .spike-info strong {
+          color: #1f2937;
+          font-weight: 600;
+        }
+
+        .spike-info span {
+          color: #6b7280;
+          font-weight: 500;
+        }
+
+        .news-link {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          margin-top: 12px;
+          color: #2563eb;
+          text-decoration: none;
+          font-weight: 600;
+          font-size: 0.9rem;
+          padding: 8px 16px;
+          background: rgba(37, 99, 235, 0.1);
+          border-radius: 8px;
+          transition: all 0.2s ease;
+          border: 1px solid rgba(37, 99, 235, 0.2);
+        }
+
+        .news-link:hover {
+          background: rgba(37, 99, 235, 0.2);
+          transform: translateY(-1px);
+          box-shadow: 0 4px 8px rgba(37, 99, 235, 0.2);
+        }
+
+        .location-alerts-footer {
+          padding: 24px;
+          background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+          border-top: 1px solid #e2e8f0;
+          text-align: center;
+        }
+
+        .acknowledge-button {
+          background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+          color: white;
+          border: none;
+          padding: 16px 32px;
+          border-radius: 12px;
+          font-weight: 600;
+          cursor: pointer;
+          font-size: 1rem;
+          transition: all 0.3s ease;
+          box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.3);
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .acknowledge-button:hover {
+          background: linear-gradient(135deg, #059669 0%, #047857 100%);
+          transform: translateY(-2px);
+          box-shadow: 0 8px 15px -3px rgba(16, 185, 129, 0.4);
+        }
+
+        .acknowledge-button:active {
+          transform: translateY(0);
+        }
+        `}</style>
+        <LocationAlertsScreen />
+      </div>
+    )
+  }
+
+  // Show background monitoring if in background mode
+  if (isBackgroundMode) {
+    return (
+      <div style={{ backgroundColor: '#1f2937', minHeight: '100vh', color: 'white' }}>
+        <style>{`
+          .background-monitoring {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            position: relative;
+          }
+
+          .monitoring-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 40px;
+            text-align: center;
+          }
+
+          .monitoring-icon {
+            margin-right: 16px;
+            color: #10b981;
+          }
+
+          .monitoring-text h2 {
+            margin: 0 0 4px 0;
+            font-size: 2rem;
+            font-weight: bold;
+          }
+
+          .monitoring-text p {
+            margin: 0;
+            color: #9ca3af;
+            font-size: 1rem;
+          }
+
+          .monitoring-status {
+            display: flex;
+            align-items: center;
+            margin-left: 20px;
+            color: #10b981;
+            font-size: 0.875rem;
+          }
+
+          .status-dot {
+            width: 8px;
+            height: 8px;
+            background: #10b981;
+            border-radius: 50%;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+          }
+
+          @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+          }
+
+          .current-location {
+            margin-bottom: 60px;
+            text-align: center;
+          }
+
+          .current-location p {
+            margin: 0;
+            font-size: 1.125rem;
+            color: #d1d5db;
+          }
+
+          .monitoring-visualization {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            margin-bottom: 40px;
+          }
+
+          .pulse-ring {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 120px;
+            height: 120px;
+            border: 2px solid #10b981;
+            border-radius: 50%;
+            animation: pulse-ring 2s infinite;
+          }
+
+          .pulse-ring.delay-1 {
+            animation-delay: 0.5s;
+          }
+
+          .pulse-ring.delay-2 {
+            animation-delay: 1s;
+          }
+
+          @keyframes pulse-ring {
+            0% {
+              transform: scale(0.8);
+              opacity: 1;
+            }
+            100% {
+              transform: scale(1.4);
+              opacity: 0;
+            }
+          }
+
+          .demo-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.9);
+            border-radius: 12px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+          }
+
+          .demo-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+          }
+
+          .demo-header h3 {
+            margin: 0;
+            color: white;
+            font-size: 1.125rem;
+          }
+
+          .close-demo {
+            background: none;
+            border: none;
+            color: #9ca3af;
+            font-size: 1.25rem;
+            cursor: pointer;
+            padding: 4px;
+          }
+
+          .demo-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 16px;
+          }
+
+          .demo-button {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #374151;
+            color: white;
+            border: none;
+            padding: 12px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.875rem;
+            transition: background 0.2s;
+          }
+
+          .demo-button:hover {
+            background: #4b5563;
+          }
+
+          .demo-hint {
+            margin: 0;
+            font-size: 0.75rem;
+            color: #9ca3af;
+            text-align: center;
+          }
+        `}</style>
+        <BackgroundMonitoringScreen />
+      </div>
     )
   }
 
@@ -482,7 +1232,43 @@ export default function TravelWelcomeApp() {
           color: #6b7280;
           margin-top: 4px;
         }
+
+        .mode-toggle {
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          z-index: 100;
+        }
+
+        .mode-toggle-button {
+          background: rgba(0, 0, 0, 0.7);
+          color: white;
+          border: none;
+          padding: 8px 12px;
+          border-radius: 20px;
+          font-size: 0.75rem;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          backdrop-filter: blur(10px);
+        }
+
+        .mode-toggle-button:hover {
+          background: rgba(0, 0, 0, 0.9);
+        }
       `}</style>
+
+      {/* Mode Toggle Button */}
+      <div className="mode-toggle">
+        <button 
+          className="mode-toggle-button"
+          onClick={() => setIsBackgroundMode(!isBackgroundMode)}
+        >
+          {isBackgroundMode ? <Eye size={14} /> : <EyeOff size={14} />}
+          {isBackgroundMode ? 'Show App' : 'Background'}
+        </button>
+      </div>
 
       {/* Header */}
       <div className="header">
