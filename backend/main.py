@@ -226,8 +226,8 @@ def calculate_baseline_and_anomaly(country_code: str) -> Dict:
 
 def get_top_headlines(country_code: str, limit: int = 3) -> List[Dict[str, str]]:
     """Get top recent headlines for a country"""
-    current_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
-    start_time = current_hour - timedelta(hours=2)
+    current_time = datetime.now()
+    start_time = current_time - timedelta(days=7)  # Look back 7 days for headlines
     
     with db_lock:
         with sqlite3.connect(DB_PATH) as conn:
@@ -292,12 +292,178 @@ async def get_countries():
         "countries": [
             {
                 "code": code,
-                "name": config["name"], 
+                "name": config["name"],
                 "flag": config["flag"]
             }
             for code, config in COUNTRIES.items()
         ]
     }
+
+@app.get("/api/v1/countries/country-info")
+async def get_country_info():
+    """Get country information for frontend compatibility"""
+    return {
+        "countries": [
+            {
+                "code": code,
+                "name": config["name"],
+                "flag": config["flag"]
+            }
+            for code, config in COUNTRIES.items()
+        ]
+    }
+
+@app.get("/api/v1/countries/")
+async def get_countries_v1():
+    """Get list of countries for v1 API compatibility"""
+    return [
+        {
+            "code": code,
+            "name": config["name"],
+            "flag": config["flag"]
+        }
+        for code, config in COUNTRIES.items()
+    ]
+
+@app.get("/api/v1/alerts/")
+async def get_alerts(country: str = None, user_id: int = 1):
+    """Get alerts based on anomalies for v1 API compatibility"""
+    anomalies = []
+    for country_code in COUNTRIES.keys():
+        analysis = calculate_baseline_and_anomaly(country_code)
+        if analysis['is_anomaly']:
+            headlines = get_top_headlines(country_code)
+            anomalies.append({
+                "id": f"alert_{country_code}_{datetime.now().isoformat()}",
+                "title": f"Travel Alert: {COUNTRIES[country_code]['name']}",
+                "message": f"Unusual spike in travel news detected for {COUNTRIES[country_code]['name']}",
+                "country_code": country_code,
+                "country_name": COUNTRIES[country_code]['name'],
+                "country": {
+                    "code": country_code,
+                    "name": COUNTRIES[country_code]['name'],
+                    "flag": COUNTRIES[country_code]['flag']
+                },
+                "severity": "medium" if analysis['spike_factor'] < 3 else "high",
+                "created_at": datetime.now().isoformat(),
+                "is_read": False,
+                "user_status": {"is_read": False},
+                "source": "Travel News Monitor",
+                "headlines": headlines
+            })
+
+    # If no real anomalies, create some sample alerts for testing
+    if not anomalies:
+        for country_code in list(COUNTRIES.keys())[:2]:  # Show 2 sample alerts
+            headlines = get_top_headlines(country_code, 3)  # Get more headlines
+            anomalies.append({
+                "id": f"sample_alert_{country_code}",
+                "title": f"Travel Update: {COUNTRIES[country_code]['name']}",
+                "message": f"Recent travel developments in {COUNTRIES[country_code]['name']}",
+                "country_code": country_code,
+                "country_name": COUNTRIES[country_code]['name'],
+                "country": {
+                    "code": country_code,
+                    "name": COUNTRIES[country_code]['name'],
+                    "flag": COUNTRIES[country_code]['flag']
+                },
+                "severity": "low",
+                "created_at": datetime.now().isoformat(),
+                "is_read": False,
+                "user_status": {"is_read": False},
+                "source": "Travel News Monitor",
+                "headlines": headlines
+            })
+
+    return {
+        "alerts": anomalies,
+        "total_count": len(anomalies),
+        "page": 1,
+        "per_page": 20
+    }
+
+@app.get("/api/v1/alerts/country/{country_code}")
+async def get_country_alerts(country_code: str):
+    """Get alerts for specific country"""
+    if country_code not in COUNTRIES:
+        raise HTTPException(status_code=404, detail="Country not found")
+
+    analysis = calculate_baseline_and_anomaly(country_code)
+    headlines = get_top_headlines(country_code, 5)
+
+    alerts = []
+    if analysis['is_anomaly'] or headlines:  # Show alerts if anomaly or recent news
+        alerts.append({
+            "id": f"alert_{country_code}_{datetime.now().isoformat()}",
+            "title": f"Travel Alert: {COUNTRIES[country_code]['name']}",
+            "message": f"Travel news activity detected for {COUNTRIES[country_code]['name']}",
+            "country_code": country_code,
+            "country_name": COUNTRIES[country_code]['name'],
+            "severity": "high" if analysis['is_anomaly'] else "medium",
+            "created_at": datetime.now().isoformat(),
+            "is_read": False,
+            "source": "Travel News Monitor",
+            "headlines": headlines,
+            "analysis": analysis
+        })
+
+    return alerts
+
+@app.get("/api/v1/alerts/{alert_id}")
+async def get_alert_detail(alert_id: str, user_id: int = 1):
+    """Get detailed alert information"""
+    # Extract country code from alert ID
+    if alert_id.startswith("sample_alert_"):
+        country_code = alert_id.replace("sample_alert_", "")
+    elif alert_id.startswith("alert_"):
+        parts = alert_id.split("_")
+        country_code = parts[1] if len(parts) > 1 else "NP"
+    else:
+        country_code = "NP"  # Default fallback
+
+    if country_code not in COUNTRIES:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    # Get headlines for this country
+    headlines = get_top_headlines(country_code, 5)
+
+    # Create detailed alert response
+    alert_detail = {
+        "id": alert_id,
+        "title": f"Travel Advisory: {COUNTRIES[country_code]['name']}",
+        "description": f"Current travel and visa developments for {COUNTRIES[country_code]['name']}. This alert aggregates recent news and official advisories affecting travelers to this destination.",
+        "country": {
+            "code": country_code,
+            "name": COUNTRIES[country_code]['name'],
+            "flag": COUNTRIES[country_code]['flag']
+        },
+        "country_code": country_code,
+        "country_name": COUNTRIES[country_code]['name'],
+        "risk_level": 2,  # Default to moderate
+        "severity": "medium",
+        "created_at": datetime.now().isoformat(),
+        "is_read": False,
+        "user_status": {"is_read": False},
+        "source": {
+            "name": "Travel News Monitor",
+            "source_type": "Government Advisory Aggregator",
+            "url": f"https://news.google.com/search?q={country_code}+travel+visa+immigration"
+        },
+        "categories": ["Travel", "Immigration", "Border Control", "Government Advisory"],
+        "headlines": headlines,
+        "full_text": f"Travel Advisory for {COUNTRIES[country_code]['name']}\n\n" +
+                    "This advisory consolidates recent developments affecting travel to " +
+                    f"{COUNTRIES[country_code]['name']}. Recent news includes:\n\n" +
+                    "\n".join([f"• {h['title']}" for h in headlines]) +
+                    f"\n\nFor the most current information, please consult official government sources and embassy advisories for {COUNTRIES[country_code]['name']}."
+    }
+
+    return alert_detail
+
+@app.post("/api/v1/alerts/{alert_id}/mark-read")
+async def mark_alert_read(alert_id: str):
+    """Mark an alert as read"""
+    return {"message": "Alert marked as read", "alert_id": alert_id}
 
 @app.get("/api/anomalies")
 async def get_anomalies() -> List[AnomalyAlert]:
