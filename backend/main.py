@@ -343,8 +343,8 @@ def get_hourly_counts(country_code: str, hours_back: int = 168) -> Dict[str, int
 
 def calculate_baseline_and_anomaly(country_code: str) -> Dict:
     """Calculate baseline and detect anomalies for a country"""
-    hourly_counts = get_hourly_counts(country_code)
-    
+    hourly_counts = get_hourly_counts(country_code, hours_back=672)  # Look back 4 weeks for enough data
+
     if len(hourly_counts) < 24:  # Need at least 24 hours of data
         return {
             'current_count': 0,
@@ -352,38 +352,60 @@ def calculate_baseline_and_anomaly(country_code: str) -> Dict:
             'spike_factor': 1.0,
             'is_anomaly': False
         }
-    
-    # Current hour count
-    current_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
-    current_count = hourly_counts.get(current_hour.isoformat(), 0)
-    
-    # Calculate baseline (mean of last 7 days, excluding current hour)
-    counts = [count for hour, count in hourly_counts.items() 
-              if hour != current_hour.isoformat()]
-    
-    if not counts:
-        baseline = 0.0
-    else:
-        baseline = statistics.mean(counts)
-    
-    # Calculate spike factor
-    spike_factor = current_count / max(baseline, 0.1)  # Avoid division by zero
-    
-    # Anomaly detection: spike factor > 2.0 and current count > 2
-    is_anomaly = spike_factor >= 2.0 and current_count >= 3
-    
+
+    # Look for anomalies in the last 2 weeks instead of just current hour
+    current_time = datetime.now()
+    two_weeks_ago = current_time - timedelta(hours=336)
+
+    # Separate recent data from baseline data
+    baseline_counts = []
+    recent_counts = []
+
+    for hour_str, count in hourly_counts.items():
+        hour_dt = datetime.fromisoformat(hour_str)
+        if hour_dt >= two_weeks_ago:
+            recent_counts.append((hour_str, count))
+        else:
+            baseline_counts.append(count)
+
+    # Calculate baseline from older data
+    if not baseline_counts:
+        # If no baseline data, use all data except recent spikes for baseline
+        all_counts = list(hourly_counts.values())
+        all_counts.sort()
+        # Use median of lower 75% as baseline to avoid including spikes
+        baseline_size = max(1, int(len(all_counts) * 0.75))
+        baseline_counts = all_counts[:baseline_size]
+
+    baseline = statistics.mean(baseline_counts) if baseline_counts else 0.1
+
+    # Find the maximum spike in recent data
+    recent_max_count = 0
+    recent_max_hour = None
+    recent_max_spike = 1.0
+
+    for hour_str, count in recent_counts:
+        spike_factor = count / max(baseline, 0.1)
+        if count > recent_max_count:
+            recent_max_count = count
+            recent_max_hour = hour_str
+            recent_max_spike = spike_factor
+
+    # Check if we found a recent anomaly
+    is_anomaly = recent_max_spike >= 2.0 and recent_max_count >= 3
+
     return {
-        'current_count': current_count,
+        'current_count': recent_max_count,
         'baseline': round(baseline, 2),
-        'spike_factor': round(spike_factor, 2),
+        'spike_factor': round(recent_max_spike, 2),
         'is_anomaly': is_anomaly
     }
 
 def get_top_headlines(country_code: str, limit: int = 3) -> List[Dict[str, str]]:
     """Get top recent headlines for a country"""
-    current_hour = datetime.now().replace(minute=0, second=0, microsecond=0)
-    start_time = current_hour - timedelta(hours=2)
-    
+    current_time = datetime.now()
+    start_time = current_time - timedelta(hours=336)
+
     with db_lock:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.execute('''
@@ -392,7 +414,7 @@ def get_top_headlines(country_code: str, limit: int = 3) -> List[Dict[str, str]]
                 ORDER BY timestamp DESC
                 LIMIT ?
             ''', (country_code, start_time.isoformat(), limit))
-            
+
             return [
                 {'title': row[0], 'url': row[1], 'source': row[2]}
                 for row in cursor.fetchall()
