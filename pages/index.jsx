@@ -3,11 +3,12 @@ import { Bell, Loader } from 'lucide-react'
 
 export default function TravelWelcomeApp() {
   const [countryData, setCountryData] = useState(null)
-  const [activeTab, setActiveTab] = useState('welcome')
+  const [activeTab, setActiveTab] = useState('alerts')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [selectedCountry, setSelectedCountry] = useState('NP')
   const [availableCountries, setAvailableCountries] = useState([])
+  const [alerts, setAlerts] = useState(null)
 
   // Function to fetch available countries
   const fetchCountries = async () => {
@@ -46,6 +47,25 @@ export default function TravelWelcomeApp() {
     }
   }
 
+  // Function to fetch alerts/anomalies data
+  const fetchAlerts = async () => {
+    try {
+      const url = `http://localhost:8000/api/anomalies`
+      console.log('Fetching alerts from:', url)
+      const response = await fetch(url)
+      console.log('Alerts response status:', response.status)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch alerts: ${response.status}`)
+      }
+      const data = await response.json()
+      console.log('Alerts data:', data)
+      return data
+    } catch (error) {
+      console.error('Error fetching alerts:', error)
+      throw error
+    }
+  }
+
   // Initialize the app
   useEffect(() => {
     const initApp = async () => {
@@ -57,6 +77,9 @@ export default function TravelWelcomeApp() {
         
         const data = await fetchCountryData(selectedCountry)
         setCountryData(data)
+
+        const alertsData = await fetchAlerts()
+        setAlerts(alertsData)
         setLoading(false)
       } catch (error) {
         console.error('Error initializing app:', error)
@@ -157,15 +180,58 @@ export default function TravelWelcomeApp() {
     </div>
   )
 
-  const renderTabContent = () => {
-    if (!countryData) return null
+  const AlertsTab = ({ isActive }) => {
+    const currentCountryAlerts = alerts?.find(alert => alert.country_code === selectedCountry)
 
     return (
+      <div className={`tab-content ${isActive ? 'active' : ''}`}>
+        <div className="card">
+          <h3 className="title">
+            {currentCountryAlerts?.is_anomaly ? '🚨' : '✅'} Travel Alerts
+          </h3>
+          {currentCountryAlerts?.is_anomaly ? (
+            <div className="alert-anomaly">
+              <p><strong>Unusual Activity Detected!</strong></p>
+              <p>Spike Factor: {currentCountryAlerts.spike_factor}x normal</p>
+              <p>Current News Volume: {currentCountryAlerts.current_count} articles</p>
+            </div>
+          ) : (
+            <div className="alert-normal">
+              <p>✅ Normal travel conditions</p>
+              <p>No unusual news activity detected</p>
+            </div>
+          )}
+
+          {currentCountryAlerts?.top_headlines?.length > 0 && (
+            <div className="headlines">
+              <h4>Recent Headlines:</h4>
+              {currentCountryAlerts.top_headlines.map((headline, index) => (
+                <div key={index} className="headline-item">
+                  <a href={headline.url} target="_blank" rel="noopener noreferrer">
+                    {headline.title}
+                  </a>
+                  <div className="headline-source">{headline.source}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const renderTabContent = () => {
+    return (
       <>
-        <WelcomeTab welcome={countryData.welcome} isActive={activeTab === 'welcome'} />
-        <TransportTab transport={countryData.transport} isActive={activeTab === 'transport'} />
-        <CultureTab culture={countryData.culture} isActive={activeTab === 'culture'} />
-        <LanguageTab language={countryData.language} isActive={activeTab === 'language'} />
+        <AlertsTab isActive={activeTab === 'alerts'} />
+        {countryData && (
+          <>
+            <WelcomeTab welcome={countryData.welcome} isActive={activeTab === 'welcome'} />
+            <TransportTab transport={countryData.transport} isActive={activeTab === 'transport'} />
+            <CultureTab culture={countryData.culture} isActive={activeTab === 'culture'} />
+            <LanguageTab language={countryData.language} isActive={activeTab === 'language'} />
+          </>
+        )}
       </>
     )
   }
@@ -360,6 +426,62 @@ export default function TravelWelcomeApp() {
           background: #1f2937;
           color: white;
         }
+
+        .alert-anomaly {
+          background: #fef2f2;
+          border: 1px solid #fecaca;
+          border-radius: 8px;
+          padding: 16px;
+          margin: 16px 0;
+          color: #dc2626;
+        }
+
+        .alert-normal {
+          background: #f0fdf4;
+          border: 1px solid #bbf7d0;
+          border-radius: 8px;
+          padding: 16px;
+          margin: 16px 0;
+          color: #16a34a;
+        }
+
+        .headlines {
+          margin-top: 20px;
+        }
+
+        .headlines h4 {
+          font-size: 1rem;
+          font-weight: 600;
+          margin-bottom: 12px;
+          color: #374151;
+        }
+
+        .headline-item {
+          margin-bottom: 12px;
+          padding: 8px 0;
+          border-bottom: 1px solid #e5e7eb;
+        }
+
+        .headline-item:last-child {
+          border-bottom: none;
+        }
+
+        .headline-item a {
+          color: #2563eb;
+          text-decoration: none;
+          font-weight: 500;
+          line-height: 1.4;
+        }
+
+        .headline-item a:hover {
+          text-decoration: underline;
+        }
+
+        .headline-source {
+          font-size: 0.875rem;
+          color: #6b7280;
+          margin-top: 4px;
+        }
       `}</style>
 
       {/* Header */}
@@ -391,6 +513,12 @@ export default function TravelWelcomeApp() {
 
       {/* Navigation Tabs */}
       <div className="tabs">
+        <button
+          className={`tab-button ${activeTab === 'alerts' ? 'active' : ''}`}
+          onClick={() => setActiveTab('alerts')}
+        >
+          Alerts
+        </button>
         <button
           className={`tab-button ${activeTab === 'welcome' ? 'active' : ''}`}
           onClick={() => setActiveTab('welcome')}
