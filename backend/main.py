@@ -1163,14 +1163,97 @@ async def collect_news():
 @app.get("/api/countries")
 async def get_countries():
     """Get list of monitored countries"""
-    return {
-        "countries": [
-            {
-                "code": code,
-                "name": config["name"], 
-                "flag": config["flag"]
+    # Get countries from database that have news data
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.execute('''
+            SELECT DISTINCT country_code FROM news_items 
+            ORDER BY country_code
+        ''')
+        db_countries = [row[0] for row in cursor.fetchall()]
+    
+    # Combine predefined countries with database countries
+    all_countries = {}
+    
+    # Add predefined countries
+    for code, config in COUNTRIES.items():
+        all_countries[code] = {
+            "code": code,
+            "name": config["name"],
+            "flag": config["flag"]
+        }
+    
+    # Add countries from database that aren't predefined
+    country_names = {
+        'US': 'United States', 'GB': 'United Kingdom', 'FR': 'France', 'DE': 'Germany',
+        'IT': 'Italy', 'ES': 'Spain', 'JP': 'Japan', 'CN': 'China', 'IN': 'India',
+        'AE': 'United Arab Emirates', 'AU': 'Australia', 'CA': 'Canada', 'MX': 'Mexico',
+        'BR': 'Brazil', 'KR': 'South Korea', 'SG': 'Singapore', 'NL': 'Netherlands',
+        'SE': 'Sweden', 'CH': 'Switzerland', 'TH': 'Thailand', 'PH': 'Philippines',
+        'ID': 'Indonesia', 'MY': 'Malaysia', 'NZ': 'New Zealand', 'AR': 'Argentina',
+        'CL': 'Chile', 'CO': 'Colombia', 'PE': 'Peru', 'EG': 'Egypt', 'ZA': 'South Africa',
+        'IR': 'Iran', 'PK': 'Pakistan', 'BD': 'Bangladesh', 'LK': 'Sri Lanka',
+        'RU': 'Russia', 'UA': 'Ukraine', 'PL': 'Poland', 'CZ': 'Czech Republic',
+        'HU': 'Hungary', 'GR': 'Greece', 'PT': 'Portugal', 'IE': 'Ireland',
+        'FI': 'Finland', 'NO': 'Norway', 'DK': 'Denmark', 'BE': 'Belgium', 'AT': 'Austria'
+    }
+    
+    for country_code in db_countries:
+        if country_code not in all_countries:
+            country_name = country_names.get(country_code, country_code)
+            all_countries[country_code] = {
+                "code": country_code,
+                "name": country_name,
+                "flag": "🌍"
             }
-            for code, config in COUNTRIES.items()
+    
+    return {
+        "countries": list(all_countries.values())
+    }
+
+def generate_dynamic_country_info(country_code: str) -> dict:
+    """Generate basic travel information for any country"""
+    country_names = {
+        'US': 'United States', 'GB': 'United Kingdom', 'FR': 'France', 'DE': 'Germany',
+        'IT': 'Italy', 'ES': 'Spain', 'JP': 'Japan', 'CN': 'China', 'IN': 'India',
+        'AE': 'United Arab Emirates', 'AU': 'Australia', 'CA': 'Canada', 'MX': 'Mexico',
+        'BR': 'Brazil', 'KR': 'South Korea', 'SG': 'Singapore', 'NL': 'Netherlands',
+        'SE': 'Sweden', 'CH': 'Switzerland', 'TH': 'Thailand', 'PH': 'Philippines',
+        'ID': 'Indonesia', 'MY': 'Malaysia', 'NZ': 'New Zealand', 'AR': 'Argentina',
+        'CL': 'Chile', 'CO': 'Colombia', 'PE': 'Peru', 'EG': 'Egypt', 'ZA': 'South Africa',
+        'IR': 'Iran', 'PK': 'Pakistan', 'BD': 'Bangladesh', 'LK': 'Sri Lanka',
+        'RU': 'Russia', 'UA': 'Ukraine', 'PL': 'Poland', 'CZ': 'Czech Republic',
+        'HU': 'Hungary', 'GR': 'Greece', 'PT': 'Portugal', 'IE': 'Ireland',
+        'FI': 'Finland', 'NO': 'Norway', 'DK': 'Denmark', 'BE': 'Belgium', 'AT': 'Austria'
+    }
+    
+    country_name = country_names.get(country_code, country_code)
+    
+    return {
+        "name": country_name,
+        "welcome": [
+            {
+                "icon": "🌍",
+                "title": f"Welcome to {country_name}",
+                "message": f"Discover the beauty and culture of {country_name}. Check the latest travel advisories and news updates below."
+            }
+        ],
+        "transport": [
+            "Check local transportation options and schedules",
+            "Verify visa requirements and entry procedures",
+            "Review health and safety guidelines",
+            "Confirm accommodation bookings"
+        ],
+        "culture": [
+            "Respect local customs and traditions",
+            "Learn basic phrases in the local language",
+            "Understand cultural norms and etiquette",
+            "Be aware of local laws and regulations"
+        ],
+        "language": [
+            {"native": "Hello", "meaning": "Greeting"},
+            {"native": "Thank you", "meaning": "Expression of gratitude"},
+            {"native": "Excuse me", "meaning": "Polite way to get attention"},
+            {"native": "Help", "meaning": "Request for assistance"}
         ]
     }
 
@@ -1178,7 +1261,9 @@ async def get_countries():
 async def get_country_info(country_code: str = "NP"):
     """Get travel information for a specific country"""
     if country_code not in TRAVEL_DATA:
-        raise HTTPException(status_code=404, detail="Country not found")
+        # Generate dynamic travel data for new countries
+        country_info = generate_dynamic_country_info(country_code)
+        return CountryInfo(**country_info)
     
     return CountryInfo(**TRAVEL_DATA[country_code])
 
@@ -1206,20 +1291,107 @@ async def get_anomalies() -> List[AnomalyAlert]:
     alerts.sort(key=lambda x: x.spike_factor, reverse=True)
     return alerts
 
+async def collect_news_for_dynamic_country(country_code: str):
+    """Collect news for a dynamically detected country"""
+    country_names = {
+        'US': 'United States', 'GB': 'United Kingdom', 'FR': 'France', 'DE': 'Germany',
+        'IT': 'Italy', 'ES': 'Spain', 'JP': 'Japan', 'CN': 'China', 'IN': 'India',
+        'AE': 'United Arab Emirates', 'AU': 'Australia', 'CA': 'Canada', 'MX': 'Mexico',
+        'BR': 'Brazil', 'KR': 'South Korea', 'SG': 'Singapore', 'NL': 'Netherlands',
+        'SE': 'Sweden', 'CH': 'Switzerland', 'TH': 'Thailand', 'PH': 'Philippines',
+        'ID': 'Indonesia', 'MY': 'Malaysia', 'NZ': 'New Zealand', 'AR': 'Argentina',
+        'CL': 'Chile', 'CO': 'Colombia', 'PE': 'Peru', 'EG': 'Egypt', 'ZA': 'South Africa',
+        'IR': 'Iran', 'PK': 'Pakistan', 'BD': 'Bangladesh', 'LK': 'Sri Lanka',
+        'RU': 'Russia', 'UA': 'Ukraine', 'PL': 'Poland', 'CZ': 'Czech Republic',
+        'HU': 'Hungary', 'GR': 'Greece', 'PT': 'Portugal', 'IE': 'Ireland',
+        'FI': 'Finland', 'NO': 'Norway', 'DK': 'Denmark', 'BE': 'Belgium', 'AT': 'Austria'
+    }
+    
+    country_name = country_names.get(country_code, country_code)
+    
+    # Create dynamic RSS feeds for the country
+    search_queries = [
+        f"{country_name}+(visa+OR+entry+OR+immigration+OR+border+OR+travel+advisory)",
+        f"{country_name}+travel+restrictions",
+        f"{country_name}+entry+requirements",
+        f"{country_name}+visa+policy"
+    ]
+    
+    all_items = []
+    for query in search_queries:
+        feed_url = f"https://news.google.com/rss/search?q={quote_plus(query)}&hl=en-US&gl=US&ceid=US:en"
+        try:
+            feed = feedparser.parse(feed_url)
+            for entry in feed.entries[:10]:  # Limit to 10 per query
+                item_id = hashlib.md5(f"{entry.link}{entry.title}".encode()).hexdigest()
+                all_items.append({
+                    'id': item_id,
+                    'country_code': country_code,
+                    'timestamp': datetime.now().isoformat(),
+                    'title': entry.title,
+                    'url': entry.link,
+                    'source': entry.get('source', {}).get('title', 'Google News')
+                })
+        except Exception as e:
+            print(f"Error fetching news for {country_code}: {e}")
+            continue
+    
+    # Store items in database
+    with db_lock:
+        with sqlite3.connect(DB_PATH) as conn:
+            for item in all_items:
+                try:
+                    conn.execute('''
+                        INSERT OR REPLACE INTO news_items 
+                        (id, country_code, timestamp, title, url, source)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    ''', (
+                        item['id'], item['country_code'], item['timestamp'],
+                        item['title'], item['url'], item['source']
+                    ))
+                except Exception as e:
+                    print(f"Error storing news item: {e}")
+            conn.commit()
+
 @app.get("/api/anomalies/{country_code}")
 async def get_country_anomaly(country_code: str) -> AnomalyAlert:
     """Get anomaly alert for specific country"""
-    if country_code not in COUNTRIES:
-        raise HTTPException(status_code=404, detail="Country not found")
-    
-    config = COUNTRIES[country_code]
-    analysis = calculate_baseline_and_anomaly(country_code)
-    headlines = get_top_headlines(country_code, limit=5)
+    # Check if country exists in our predefined list
+    if country_code in COUNTRIES:
+        config = COUNTRIES[country_code]
+        analysis = calculate_baseline_and_anomaly(country_code)
+        headlines = get_top_headlines(country_code, limit=5)
+        country_name = config["name"]
+        flag = config["flag"]
+    else:
+        # For new countries, generate basic data and try to collect news
+        country_names = {
+            'US': 'United States', 'GB': 'United Kingdom', 'FR': 'France', 'DE': 'Germany',
+            'IT': 'Italy', 'ES': 'Spain', 'JP': 'Japan', 'CN': 'China', 'IN': 'India',
+            'AE': 'United Arab Emirates', 'AU': 'Australia', 'CA': 'Canada', 'MX': 'Mexico',
+            'BR': 'Brazil', 'KR': 'South Korea', 'SG': 'Singapore', 'NL': 'Netherlands',
+            'SE': 'Sweden', 'CH': 'Switzerland', 'TH': 'Thailand', 'PH': 'Philippines',
+            'ID': 'Indonesia', 'MY': 'Malaysia', 'NZ': 'New Zealand', 'AR': 'Argentina',
+            'CL': 'Chile', 'CO': 'Colombia', 'PE': 'Peru', 'EG': 'Egypt', 'ZA': 'South Africa',
+            'IR': 'Iran', 'PK': 'Pakistan', 'BD': 'Bangladesh', 'LK': 'Sri Lanka',
+            'RU': 'Russia', 'UA': 'Ukraine', 'PL': 'Poland', 'CZ': 'Czech Republic',
+            'HU': 'Hungary', 'GR': 'Greece', 'PT': 'Portugal', 'IE': 'Ireland',
+            'FI': 'Finland', 'NO': 'Norway', 'DK': 'Denmark', 'BE': 'Belgium', 'AT': 'Austria'
+        }
+        country_name = country_names.get(country_code, country_code)
+        flag = "🌍"  # Default flag for unknown countries
+        
+        # Try to collect news for this country dynamically
+        await collect_news_for_dynamic_country(country_code)
+        
+        # Calculate analysis for the new country
+        analysis = calculate_baseline_and_anomaly(country_code)
+        headlines = get_top_headlines(country_code, limit=5)
     
     return AnomalyAlert(
         country_code=country_code,
-        country_name=config["name"],
-        flag=config["flag"],
+        country_name=country_name,
+        flag=flag,
         current_count=analysis["current_count"],
         baseline=analysis["baseline"],
         spike_factor=analysis["spike_factor"],
