@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Bell, Loader, MapPin, Eye, EyeOff, Plane, AlertTriangle } from 'lucide-react'
+import { Bell, Loader, Globe, AlertTriangle, CheckCircle, MapPin, Plane, Eye, EyeOff } from 'lucide-react'
 
 export default function TravelWelcomeApp() {
   const [countryData, setCountryData] = useState(null)
@@ -18,12 +18,17 @@ export default function TravelWelcomeApp() {
   const [locationAlerts, setLocationAlerts] = useState(null)
   const [isBackgroundMode, setIsBackgroundMode] = useState(true)
   const dKeyTimeoutRef = useRef(null)
+  
+  // Location tracking state
+  const [userLocation, setUserLocation] = useState(null)
+  const [detectedCountry, setDetectedCountry] = useState(null)
+  const [locationPermission, setLocationPermission] = useState('prompt') // 'prompt', 'granted', 'denied'
 
   // Function to fetch available countries
   const fetchCountries = async () => {
     try {
-      console.log('Fetching countries from:', 'http://localhost:8001/api/countries')
-      const response = await fetch('http://localhost:8001/api/countries')
+      console.log('Fetching countries from:', 'http://localhost:8000/api/countries')
+      const response = await fetch('http://localhost:8000/api/countries')
       console.log('Countries response status:', response.status)
       if (!response.ok) {
         throw new Error(`Failed to fetch countries: ${response.status}`)
@@ -40,7 +45,7 @@ export default function TravelWelcomeApp() {
   // Function to fetch country data from backend
   const fetchCountryData = async (countryCode = 'NP') => {
     try {
-      const url = `http://localhost:8001/api/country-info?country_code=${countryCode}`
+      const url = `http://localhost:8000/api/country-info?country_code=${countryCode}`
       console.log('Fetching country data from:', url)
       const response = await fetch(url)
       console.log('Country data response status:', response.status)
@@ -59,7 +64,7 @@ export default function TravelWelcomeApp() {
   // Function to fetch alerts/anomalies data
   const fetchAlerts = async () => {
     try {
-      const url = `http://localhost:8001/api/anomalies`
+      const url = `http://localhost:8000/api/anomalies`
       console.log('Fetching alerts from:', url)
       const response = await fetch(url)
       console.log('Alerts response status:', response.status)
@@ -73,6 +78,289 @@ export default function TravelWelcomeApp() {
       console.error('Error fetching alerts:', error)
       throw error
     }
+  }
+
+  // Function to get user's current location
+  const getUserLocation = async () => {
+    // First try IP-based geolocation (works with VPNs)
+    try {
+      const ipResponse = await fetch('https://ipapi.co/json/')
+      if (ipResponse.ok) {
+        const ipData = await ipResponse.json()
+        console.log('IP-based location:', ipData)
+        
+        if (ipData.country_code) {
+          const countryInfo = {
+            code: ipData.country_code,
+            name: ipData.country_name,
+            city: ipData.city || 'Unknown City',
+            method: 'ip'
+          }
+          setDetectedCountry(countryInfo)
+          setLocationPermission('granted')
+          console.log('Detected country from IP:', countryInfo)
+          return
+        }
+      }
+    } catch (error) {
+      console.error('Error getting IP-based location:', error)
+    }
+
+    // Fallback to GPS if IP detection fails
+    if (!navigator.geolocation) {
+      console.error('Geolocation is not supported by this browser')
+      setLocationPermission('denied')
+      detectCountryFromTimezone()
+      return
+    }
+
+    setLocationPermission('prompt')
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const location = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy
+        }
+        setUserLocation(location)
+        setLocationPermission('granted')
+        console.log('Location obtained:', location)
+
+        // Reverse geocode to get country
+        reverseGeocode(location.latitude, location.longitude)
+      },
+      (error) => {
+        console.error('Error getting location:', error)
+        setLocationPermission('denied')
+
+        // Fallback: try to detect country from timezone
+        detectCountryFromTimezone()
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 300000 // 5 minutes
+      }
+    )
+  }
+
+  // Function to reverse geocode coordinates to country
+  const reverseGeocode = async (lat, lng) => {
+    try {
+      // Using a free reverse geocoding service
+      const response = await fetch(
+        `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`
+      )
+      
+      if (!response.ok) {
+        throw new Error('Reverse geocoding failed')
+      }
+      
+      const data = await response.json()
+      console.log('Reverse geocoding result:', data)
+      
+      if (data.countryCode) {
+        const countryInfo = {
+          code: data.countryCode,
+          name: data.countryName,
+          city: data.city || data.locality || 'Unknown City'
+        }
+        setDetectedCountry(countryInfo)
+        console.log('Detected country:', countryInfo)
+      }
+    } catch (error) {
+      console.error('Error reverse geocoding:', error)
+      // Fallback to timezone detection
+      detectCountryFromTimezone()
+    }
+  }
+
+  // Fallback function to detect country from timezone
+  const detectCountryFromTimezone = () => {
+    try {
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+      console.log('Detected timezone:', timezone)
+      
+      // Map common timezones to country codes
+      const timezoneToCountry = {
+        'America/New_York': 'US',
+        'America/Los_Angeles': 'US',
+        'America/Chicago': 'US',
+        'America/Denver': 'US',
+        'Europe/London': 'GB',
+        'Europe/Paris': 'FR',
+        'Europe/Berlin': 'DE',
+        'Europe/Rome': 'IT',
+        'Europe/Madrid': 'ES',
+        'Asia/Tokyo': 'JP',
+        'Asia/Shanghai': 'CN',
+        'Asia/Kolkata': 'IN',
+        'Asia/Dubai': 'AE',
+        'Australia/Sydney': 'AU',
+        'America/Toronto': 'CA',
+        'America/Mexico_City': 'MX',
+        'America/Sao_Paulo': 'BR',
+        'Asia/Seoul': 'KR',
+        'Asia/Singapore': 'SG',
+        'Europe/Amsterdam': 'NL',
+        'Europe/Stockholm': 'SE',
+        'Europe/Zurich': 'CH',
+        'Asia/Bangkok': 'TH',
+        'Asia/Manila': 'PH',
+        'Asia/Jakarta': 'ID',
+        'Asia/Kuala_Lumpur': 'MY',
+        'Pacific/Auckland': 'NZ',
+        'America/Argentina/Buenos_Aires': 'AR',
+        'America/Chile/Santiago': 'CL',
+        'America/Colombia/Bogota': 'CO',
+        'America/Peru/Lima': 'PE',
+        'Africa/Cairo': 'EG',
+        'Africa/Johannesburg': 'ZA',
+        'Asia/Tehran': 'IR',
+        'Asia/Karachi': 'PK',
+        'Asia/Dhaka': 'BD',
+        'Asia/Kathmandu': 'NP',
+        'Asia/Colombo': 'LK',
+        'Europe/Moscow': 'RU',
+        'Europe/Kiev': 'UA',
+        'Europe/Warsaw': 'PL',
+        'Europe/Prague': 'CZ',
+        'Europe/Budapest': 'HU',
+        'Europe/Athens': 'GR',
+        'Europe/Lisbon': 'PT',
+        'Europe/Dublin': 'IE',
+        'Europe/Helsinki': 'FI',
+        'Europe/Oslo': 'NO',
+        'Europe/Copenhagen': 'DK',
+        'Europe/Brussels': 'BE',
+        'Europe/Vienna': 'AT'
+      }
+      
+      const countryCode = timezoneToCountry[timezone]
+      if (countryCode) {
+        const countryInfo = {
+          code: countryCode,
+          name: getCountryName(countryCode),
+          city: 'Detected from timezone',
+          method: 'timezone'
+        }
+        setDetectedCountry(countryInfo)
+        console.log('Detected country from timezone:', countryInfo)
+      }
+    } catch (error) {
+      console.error('Error detecting country from timezone:', error)
+    }
+  }
+
+  // Helper function to get country name from code
+  const getCountryName = (code) => {
+    const countryNames = {
+      'US': 'United States',
+      'GB': 'United Kingdom',
+      'FR': 'France',
+      'DE': 'Germany',
+      'IT': 'Italy',
+      'ES': 'Spain',
+      'JP': 'Japan',
+      'CN': 'China',
+      'IN': 'India',
+      'AE': 'United Arab Emirates',
+      'AU': 'Australia',
+      'CA': 'Canada',
+      'MX': 'Mexico',
+      'BR': 'Brazil',
+      'KR': 'South Korea',
+      'SG': 'Singapore',
+      'NL': 'Netherlands',
+      'SE': 'Sweden',
+      'CH': 'Switzerland',
+      'TH': 'Thailand',
+      'PH': 'Philippines',
+      'ID': 'Indonesia',
+      'MY': 'Malaysia',
+      'NZ': 'New Zealand',
+      'AR': 'Argentina',
+      'CL': 'Chile',
+      'CO': 'Colombia',
+      'PE': 'Peru',
+      'EG': 'Egypt',
+      'ZA': 'South Africa',
+      'IR': 'Iran',
+      'PK': 'Pakistan',
+      'BD': 'Bangladesh',
+      'NP': 'Nepal',
+      'LK': 'Sri Lanka',
+      'RU': 'Russia',
+      'UA': 'Ukraine',
+      'PL': 'Poland',
+      'CZ': 'Czech Republic',
+      'HU': 'Hungary',
+      'GR': 'Greece',
+      'PT': 'Portugal',
+      'IE': 'Ireland',
+      'FI': 'Finland',
+      'NO': 'Norway',
+      'DK': 'Denmark',
+      'BE': 'Belgium',
+      'AT': 'Austria'
+    }
+    return countryNames[code] || code
+  }
+
+  // Helper function to get country flag emoji
+  const getCountryFlag = (code) => {
+    const flags = {
+      'US': '🇺🇸',
+      'GB': '🇬🇧',
+      'FR': '🇫🇷',
+      'DE': '🇩🇪',
+      'IT': '🇮🇹',
+      'ES': '🇪🇸',
+      'JP': '🇯🇵',
+      'CN': '🇨🇳',
+      'IN': '🇮🇳',
+      'AE': '🇦🇪',
+      'AU': '🇦🇺',
+      'CA': '🇨🇦',
+      'MX': '🇲🇽',
+      'BR': '🇧🇷',
+      'KR': '🇰🇷',
+      'SG': '🇸🇬',
+      'NL': '🇳🇱',
+      'SE': '🇸🇪',
+      'CH': '🇨🇭',
+      'TH': '🇹🇭',
+      'PH': '🇵🇭',
+      'ID': '🇮🇩',
+      'MY': '🇲🇾',
+      'NZ': '🇳🇿',
+      'AR': '🇦🇷',
+      'CL': '🇨🇱',
+      'CO': '🇨🇴',
+      'PE': '🇵🇪',
+      'EG': '🇪🇬',
+      'ZA': '🇿🇦',
+      'IR': '🇮🇷',
+      'PK': '🇵🇰',
+      'BD': '🇧🇩',
+      'NP': '🇳🇵',
+      'LK': '🇱🇰',
+      'RU': '🇷🇺',
+      'UA': '🇺🇦',
+      'PL': '🇵🇱',
+      'CZ': '🇨🇿',
+      'HU': '🇭🇺',
+      'GR': '🇬🇷',
+      'PT': '🇵🇹',
+      'IE': '🇮🇪',
+      'FI': '🇫🇮',
+      'NO': '🇳🇴',
+      'DK': '🇩🇰',
+      'BE': '🇧🇪',
+      'AT': '🇦🇹'
+    }
+    return flags[code] || '🌍'
   }
 
   // Location simulation functions
@@ -195,6 +483,9 @@ export default function TravelWelcomeApp() {
         // Get current location from simulation
         await getCurrentLocation()
         
+        // Initialize location detection
+        getUserLocation()
+        
         setLoading(false)
       } catch (error) {
         console.error('Error initializing app:', error)
@@ -224,73 +515,94 @@ export default function TravelWelcomeApp() {
 
   // Loading spinner component
   const LoadingSpinner = () => (
-    <div className="flex justify-center items-center py-20">
-      <div className="loader"></div>
+    <div className="loading-container">
+      <div className="modern-loader">
+        <div className="loader-ring"></div>
+        <div className="loader-ring"></div>
+        <div className="loader-ring"></div>
+      </div>
+      <p className="loading-text">Loading your travel guide...</p>
     </div>
   )
 
   // Error message component
   const ErrorMessage = ({ message }) => (
-    <div className="error-message">
-      {message}
+    <div className="error-card">
+      <AlertTriangle size={24} className="error-icon" />
+      <p>{message}</p>
     </div>
   )
 
   // Tab content components
   const WelcomeTab = ({ welcome, isActive }) => (
     <div className={`tab-content ${isActive ? 'active' : ''}`}>
-      {welcome?.map((item, index) => (
-        <div key={index} className="card">
-          <div className="info-item">
-            <div>{item.icon}</div>
-            <div style={{ marginLeft: '10px' }}>
-              <h3>{item.title}</h3>
-              <p style={{ color: '#666' }}>{item.message}</p>
+      <div className="welcome-grid">
+        {welcome?.map((item, index) => (
+          <div key={index} className="welcome-card">
+            <div className="welcome-icon">{item.icon}</div>
+            <div className="welcome-content">
+              <h3 className="welcome-title">{item.title}</h3>
+              <p className="welcome-message">{item.message}</p>
             </div>
           </div>
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   )
 
   const TransportTab = ({ transport, isActive }) => (
     <div className={`tab-content ${isActive ? 'active' : ''}`}>
-      <div className="card">
-        <h3 className="title">Transportation Tips</h3>
-        {transport?.map((tip, index) => (
-          <div key={index} className="info-item">
-            <div className="dot"></div>
-            <div>{tip}</div>
-          </div>
-        ))}
+      <div className="content-card">
+        <div className="card-header">
+          <MapPin className="header-icon" />
+          <h3 className="card-title">Transportation Guide</h3>
+        </div>
+        <div className="transport-list">
+          {transport?.map((tip, index) => (
+            <div key={index} className="transport-item">
+              <div className="transport-number">{index + 1}</div>
+              <p className="transport-text">{tip}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
 
   const CultureTab = ({ culture, isActive }) => (
     <div className={`tab-content ${isActive ? 'active' : ''}`}>
-      <div className="card">
-        <h3 className="title">Cultural Guidelines</h3>
-        {culture?.map((tip, index) => (
-          <div key={index} className="info-item">
-            <div className="dot"></div>
-            <div>{tip}</div>
-          </div>
-        ))}
+      <div className="content-card">
+        <div className="card-header">
+          <Globe className="header-icon" />
+          <h3 className="card-title">Cultural Guidelines</h3>
+        </div>
+        <div className="culture-grid">
+          {culture?.map((tip, index) => (
+            <div key={index} className="culture-item">
+              <div className="culture-dot"></div>
+              <p className="culture-text">{tip}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
 
   const LanguageTab = ({ language, isActive }) => (
     <div className={`tab-content ${isActive ? 'active' : ''}`}>
-      <div className="card">
-        <h3 className="title">Essential Phrases</h3>
-        {language?.map((phrase, index) => (
-          <div key={index} className="phrase">
-            <div className="phrase-native">{phrase.native}</div>
-            <div className="phrase-meaning">{phrase.meaning}</div>
-          </div>
-        ))}
+      <div className="content-card">
+        <div className="card-header">
+          <Globe className="header-icon" />
+          <h3 className="card-title">Essential Phrases</h3>
+        </div>
+        <div className="phrases-container">
+          {language?.map((phrase, index) => (
+            <div key={index} className="phrase-card">
+              <div className="phrase-native">{phrase.native}</div>
+              <div className="phrase-meaning">{phrase.meaning}</div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )
@@ -300,34 +612,55 @@ export default function TravelWelcomeApp() {
 
     return (
       <div className={`tab-content ${isActive ? 'active' : ''}`}>
-        <div className="card">
-          <h3 className="title">
-            {currentCountryAlerts?.is_anomaly ? '🚨' : '✅'} Travel Alerts
-          </h3>
-          {currentCountryAlerts?.is_anomaly ? (
-            <div className="alert-anomaly">
-              <p><strong>Unusual Activity Detected!</strong></p>
-              <p>Spike Factor: {currentCountryAlerts.spike_factor}x normal</p>
-              <p>Current News Volume: {currentCountryAlerts.current_count} articles</p>
-            </div>
-          ) : (
-            <div className="alert-normal">
-              <p>✅ Normal travel conditions</p>
-              <p>No unusual news activity detected</p>
-            </div>
-          )}
+        <div className="content-card">
+          <div className="card-header">
+            {currentCountryAlerts?.is_anomaly ? 
+              <AlertTriangle className="header-icon alert" /> : 
+              <CheckCircle className="header-icon safe" />
+            }
+            <h3 className="card-title">Travel Status</h3>
+          </div>
+          
+          <div className={`status-banner ${currentCountryAlerts?.is_anomaly ? 'alert' : 'safe'}`}>
+            {currentCountryAlerts?.is_anomaly ? (
+              <div className="status-content">
+                <div className="status-badge alert">⚠️ Alert</div>
+                <h4>Unusual Activity Detected</h4>
+                <div className="alert-metrics">
+                  <div className="metric">
+                    <span className="metric-value">{currentCountryAlerts.spike_factor}x</span>
+                    <span className="metric-label">Spike Factor</span>
+                  </div>
+                  <div className="metric">
+                    <span className="metric-value">{currentCountryAlerts.current_count}</span>
+                    <span className="metric-label">News Articles</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="status-content">
+                <div className="status-badge safe">✓ Safe</div>
+                <h4>Normal Travel Conditions</h4>
+                <p>No unusual news activity detected</p>
+              </div>
+            )}
+          </div>
 
           {currentCountryAlerts?.top_headlines?.length > 0 && (
-            <div className="headlines">
-              <h4>Recent Headlines:</h4>
-              {currentCountryAlerts.top_headlines.map((headline, index) => (
-                <div key={index} className="headline-item">
-                  <a href={headline.url} target="_blank" rel="noopener noreferrer">
-                    {headline.title}
-                  </a>
-                  <div className="headline-source">{headline.source}</div>
-                </div>
-              ))}
+            <div className="headlines-section">
+              <h4 className="headlines-title">Latest Headlines</h4>
+              <div className="headlines-grid">
+                {currentCountryAlerts.top_headlines.map((headline, index) => (
+                  <div key={index} className="headline-card">
+                    <a href={headline.url} target="_blank" rel="noopener noreferrer" className="headline-link">
+                      {headline.title}
+                    </a>
+                    <div className="headline-meta">
+                      <span className="headline-source">{headline.source}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
@@ -432,14 +765,37 @@ export default function TravelWelcomeApp() {
         <div className="demo-panel">
           <div className="demo-header">
             <h3>Demo Controls</h3>
-            <button 
-              className="close-demo"
-              onClick={() => setShowDemoPanel(false)}
-            >
-              ✕
-            </button>
+            <div className="demo-header-buttons">
+              <button 
+                className="refresh-location"
+                onClick={getUserLocation}
+                title="Refresh location (useful when changing VPN)"
+              >
+                🔄 Refresh Location
+              </button>
+              <button 
+                className="close-demo"
+                onClick={() => setShowDemoPanel(false)}
+              >
+                ✕
+              </button>
+            </div>
           </div>
           <div className="demo-buttons">
+            {detectedCountry && (
+              <button 
+                className="demo-button detected-location"
+                onClick={() => simulateTravel(detectedCountry.code)}
+              >
+                <MapPin size={16} />
+                Your Location: {detectedCountry.name} {getCountryFlag(detectedCountry.code)}
+                <span className="location-method">
+                  {detectedCountry.method === 'timezone' ? '📍 Detected from timezone' : 
+                   detectedCountry.method === 'ip' ? '🌐 Location detected' : 
+                   '📍 GPS detected'}
+                </span>
+              </button>
+            )}
             <button 
               className="demo-button"
               onClick={() => simulateTravel('NP')}
@@ -461,8 +817,19 @@ export default function TravelWelcomeApp() {
               <Plane size={16} />
               Travel to Russia 🇷🇺
             </button>
+            {locationPermission === 'denied' && (
+              <div className="location-error">
+                <AlertTriangle size={16} />
+                Location access denied. Using timezone detection.
+              </div>
+            )}
           </div>
-          <p className="demo-hint">Press 'D' 3 times to toggle this panel</p>
+          <div className="demo-info">
+            <p className="demo-hint">Press 'D' 3 times to toggle this panel</p>
+            <p className="available-countries">
+              🌍 Any country detected - data scraped in real time
+            </p>
+          </div>
         </div>
       )}
     </div>
@@ -940,6 +1307,30 @@ export default function TravelWelcomeApp() {
             font-size: 1.125rem;
           }
 
+          .demo-header-buttons {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+          }
+
+          .refresh-location {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: #93c5fd;
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+          }
+
+          .refresh-location:hover {
+            background: rgba(59, 130, 246, 0.2);
+            border-color: rgba(59, 130, 246, 0.5);
+            color: #60a5fa;
+          }
+
           .close-demo {
             background: none;
             border: none;
@@ -968,17 +1359,92 @@ export default function TravelWelcomeApp() {
             cursor: pointer;
             font-size: 0.875rem;
             transition: background 0.2s;
+            position: relative;
           }
 
           .demo-button:hover {
             background: #4b5563;
           }
 
+          .demo-button.detected-location {
+            background: linear-gradient(135deg, #3182ce 0%, #2c5282 100%);
+            border: 2px solid #3182ce;
+            flex-direction: column;
+            align-items: flex-start;
+            padding: 16px;
+          }
+
+          .demo-button.detected-location:hover {
+            background: linear-gradient(135deg, #2c5282 0%, #2a4a7c 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(49, 130, 206, 0.3);
+          }
+
+          .location-method {
+            font-size: 0.75rem;
+            opacity: 0.8;
+            margin-top: 4px;
+            font-style: italic;
+          }
+
+          .location-error {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #fed7d7;
+            color: #c53030;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            border: 1px solid #feb2b2;
+          }
+
+          .location-unavailable {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            background: #f7fafc;
+            color: #4a5568;
+            padding: 16px;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            border: 1px solid #e2e8f0;
+            margin-bottom: 12px;
+          }
+
+          .location-unavailable div {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+          }
+
+          .location-unavailable strong {
+            color: #1a202c;
+            font-size: 0.9rem;
+          }
+
+          .unavailable-note {
+            font-size: 0.8rem;
+            color: #718096;
+            font-style: italic;
+            margin-top: 4px;
+          }
+
+          .demo-info {
+            text-align: center;
+          }
+
           .demo-hint {
-            margin: 0;
+            margin: 0 0 8px 0;
             font-size: 0.75rem;
             color: #9ca3af;
-            text-align: center;
+          }
+
+          .available-countries {
+            margin: 0;
+            font-size: 0.7rem;
+            color: #6b7280;
+            font-style: italic;
           }
         `}</style>
         <BackgroundMonitoringScreen />
@@ -987,184 +1453,94 @@ export default function TravelWelcomeApp() {
   }
 
   return (
-    <div style={{ backgroundColor: '#f3f4f6', minHeight: '100vh' }}>
+    <div className="app-container">
       <style>{`
+        * {
+          box-sizing: border-box;
+        }
+        
+        .app-container {
+          background: #ffffff;
+          min-height: 100vh;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+          position: relative;
+          overflow-x: hidden;
+        }
+        
+        .app-container::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: 
+            linear-gradient(135deg, rgba(248, 250, 252, 0.8) 0%, rgba(241, 245, 249, 0.4) 100%);
+          pointer-events: none;
+        }
+
         .header {
-          background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
-          color: white;
-          padding: 24px;
-          border-radius: 0 0 24px 24px;
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+          position: relative;
+          z-index: 10;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          color: #1a202c;
+          padding: 40px 24px;
+          margin: 20px;
+          border-radius: 16px;
+          box-shadow: 
+            0 4px 6px -1px rgba(0, 0, 0, 0.1),
+            0 2px 4px -1px rgba(0, 0, 0, 0.06);
         }
 
         .header-content {
           display: flex;
           justify-content: space-between;
-          align-items: center;
-          max-width: 28rem;
-          margin: 0 auto;
-        }
-
-        .header h1 {
-          font-size: 1.5rem;
-          font-weight: bold;
-          margin: 0 0 4px 0;
-        }
-
-        .header p {
-          font-size: 0.875rem;
-          opacity: 0.9;
-          margin: 0;
-        }
-
-        .tabs {
-          display: flex;
-          background: rgba(255, 255, 255, 0.5);
-          margin: 16px;
-          border-radius: 16px;
-          padding: 4px;
-          border: 1px solid #d1d5db;
-          max-width: 28rem;
-          margin: 16px auto;
-        }
-
-        .tab-button {
-          flex: 1;
-          padding: 12px 16px;
-          border-radius: 12px;
-          font-weight: 500;
-          transition: all 0.2s;
-          background: none;
-          border: none;
-          cursor: pointer;
-          font-size: 0.875rem;
-          color: #6b7280;
-        }
-
-        .tab-button.active {
-          background: white;
-          color: #1f2937;
-          box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-          border: 1px solid #d1d5db;
-        }
-
-        .tab-button:hover:not(.active) {
-          background: rgba(255, 255, 255, 0.5);
-        }
-
-        .content-area {
-          padding: 0 16px 24px;
-          max-width: 28rem;
-          margin: 0 auto;
-        }
-
-        .tab-content {
-          display: none;
-        }
-
-        .tab-content.active {
-          display: block;
-        }
-
-        .card {
-          background: white;
-          border-radius: 16px;
-          padding: 20px;
-          margin-bottom: 16px;
-          box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
-          border: 1px solid #e5e7eb;
-        }
-
-        .info-item {
-          display: flex;
           align-items: flex-start;
-          padding: 12px 0;
+          max-width: 480px;
+          margin: 0 auto;
         }
 
-        .info-item h3 {
-          font-weight: 600;
-          color: #1f2937;
-          margin: 0 0 4px 0;
+        .header-left h1 {
+          font-size: 2.5rem;
+          font-weight: 800;
+          margin: 0 0 12px 0;
+          color: #1a202c;
+          letter-spacing: -0.025em;
         }
 
-        .info-item p {
-          margin: 0;
-          font-size: 0.875rem;
-        }
-
-        .title {
+        .header-left .location {
           font-size: 1.125rem;
-          font-weight: bold;
-          margin-bottom: 16px;
-          color: #1f2937;
+          color: #4a5568;
+          margin: 0 0 20px 0;
           display: flex;
           align-items: center;
-        }
-
-        .dot {
-          width: 8px;
-          height: 8px;
-          background: #3b82f6;
-          border-radius: 50%;
-          margin-right: 12px;
-          margin-top: 6px;
-          flex-shrink: 0;
-        }
-
-        .phrase {
-          padding: 12px 0;
-          border-bottom: 1px solid #f3f4f6;
-        }
-
-        .phrase:last-child {
-          border-bottom: none;
-        }
-
-        .phrase-native {
-          font-weight: 600;
-          color: #1f2937;
-          margin-bottom: 4px;
-        }
-
-        .phrase-meaning {
-          font-size: 0.875rem;
-          color: #6b7280;
-        }
-
-        .loader {
-          border: 4px solid #f3f3f3;
-          border-radius: 50%;
-          border-top: 4px solid #2563eb;
-          width: 40px;
-          height: 40px;
-          animation: spin 1s linear infinite;
-          margin: 20px auto;
-        }
-
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-
-        .error-message {
-          color: #dc2626;
-          text-align: center;
-          padding: 20px;
-          background: #fef2f2;
-          border-radius: 8px;
-          margin: 20px;
-          border: 1px solid #fecaca;
+          gap: 8px;
+          font-weight: 500;
         }
 
         .country-selector {
-          margin-top: 8px;
-          padding: 6px 12px;
-          border-radius: 8px;
-          border: 1px solid rgba(255, 255, 255, 0.3);
-          background: rgba(255, 255, 255, 0.2);
-          color: white;
-          font-size: 0.875rem;
+          background: #ffffff;
+          border: 2px solid #e2e8f0;
+          border-radius: 12px;
+          padding: 12px 16px;
+          color: #1a202c;
+          font-size: 1rem;
           cursor: pointer;
+          transition: all 0.3s ease;
+          min-width: 200px;
+          font-weight: 500;
+        }
+
+        .country-selector:hover {
+          border-color: #3182ce;
+          box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.1);
+        }
+
+        .country-selector:focus {
+          outline: none;
+          border-color: #3182ce;
+          box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.1);
         }
 
         .country-selector:disabled {
@@ -1173,64 +1549,473 @@ export default function TravelWelcomeApp() {
         }
 
         .country-selector option {
-          background: #1f2937;
-          color: white;
+          background: #ffffff;
+          color: #1a202c;
+          padding: 8px;
         }
 
-        .alert-anomaly {
-          background: #fef2f2;
-          border: 1px solid #fecaca;
-          border-radius: 8px;
-          padding: 16px;
-          margin: 16px 0;
-          color: #dc2626;
+        .header-right {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 56px;
+          height: 56px;
+          background: #f7fafc;
+          border-radius: 16px;
+          border: 1px solid #e2e8f0;
+          transition: all 0.3s ease;
+          color: #4a5568;
         }
 
-        .alert-normal {
-          background: #f0fdf4;
-          border: 1px solid #bbf7d0;
-          border-radius: 8px;
-          padding: 16px;
-          margin: 16px 0;
-          color: #16a34a;
+        .header-right:hover {
+          background: #edf2f7;
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
 
-        .headlines {
-          margin-top: 20px;
+        .tabs-container {
+          position: relative;
+          z-index: 10;
+          padding: 0 16px;
+          margin-bottom: 24px;
         }
 
-        .headlines h4 {
-          font-size: 1rem;
+        .tabs {
+          display: flex;
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 16px;
+          padding: 8px;
+          max-width: 480px;
+          margin: 0 auto;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .tab-button {
+          flex: 1;
+          padding: 12px 16px;
+          border-radius: 12px;
           font-weight: 600;
-          margin-bottom: 12px;
-          color: #374151;
+          font-size: 0.9rem;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          background: none;
+          border: none;
+          cursor: pointer;
+          color: #4a5568;
+          position: relative;
+          text-align: center;
         }
 
-        .headline-item {
-          margin-bottom: 12px;
-          padding: 8px 0;
-          border-bottom: 1px solid #e5e7eb;
+        .tab-button.active {
+          background: #3182ce;
+          color: #ffffff;
+          box-shadow: 0 2px 4px rgba(49, 130, 206, 0.2);
+          transform: translateY(-1px);
         }
 
-        .headline-item:last-child {
-          border-bottom: none;
+        .tab-button:hover:not(.active) {
+          background: #f7fafc;
+          color: #1a202c;
         }
 
-        .headline-item a {
-          color: #2563eb;
-          text-decoration: none;
+        .content-area {
+          position: relative;
+          z-index: 10;
+          padding: 0 16px 32px;
+          max-width: 480px;
+          margin: 0 auto;
+        }
+
+        .tab-content {
+          display: none;
+          animation: fadeIn 0.4s ease-out;
+        }
+
+        .tab-content.active {
+          display: block;
+        }
+
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+
+        .content-card {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 16px;
+          padding: 32px;
+          margin-bottom: 24px;
+          box-shadow: 
+            0 4px 6px -1px rgba(0, 0, 0, 0.1),
+            0 2px 4px -1px rgba(0, 0, 0, 0.06);
+          transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .content-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 
+            0 10px 15px -3px rgba(0, 0, 0, 0.1),
+            0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        .card-header {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 24px;
+          padding-bottom: 20px;
+          border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .header-icon {
+          color: #3182ce;
+        }
+
+        .header-icon.alert {
+          color: #e53e3e;
+        }
+
+        .header-icon.safe {
+          color: #38a169;
+        }
+
+        .card-title {
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: #1a202c;
+          margin: 0;
+          letter-spacing: -0.025em;
+        }
+
+        .loading-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 60px 20px;
+        }
+
+        .modern-loader {
+          position: relative;
+          width: 60px;
+          height: 60px;
+        }
+
+        .loader-ring {
+          position: absolute;
+          width: 60px;
+          height: 60px;
+          border: 3px solid transparent;
+          border-top-color: #667eea;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+
+        .loader-ring:nth-child(2) {
+          width: 45px;
+          height: 45px;
+          top: 7.5px;
+          left: 7.5px;
+          border-top-color: #764ba2;
+          animation-duration: 0.8s;
+          animation-direction: reverse;
+        }
+
+        .loader-ring:nth-child(3) {
+          width: 30px;
+          height: 30px;
+          top: 15px;
+          left: 15px;
+          border-top-color: #ff7b9c;
+          animation-duration: 0.6s;
+        }
+
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+          margin-top: 24px;
+          color: #4a5568;
+          font-size: 1rem;
           font-weight: 500;
-          line-height: 1.4;
         }
 
-        .headline-item a:hover {
+        .error-card {
+          background: #fed7d7;
+          border: 1px solid #feb2b2;
+          border-radius: 16px;
+          padding: 24px;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          color: #c53030;
+          font-weight: 500;
+        }
+
+        .error-icon {
+          flex-shrink: 0;
+        }
+
+        .welcome-grid {
+          display: grid;
+          gap: 20px;
+        }
+
+        .welcome-card {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 16px;
+          padding: 24px;
+          display: flex;
+          align-items: flex-start;
+          gap: 16px;
+          transition: all 0.3s ease;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .welcome-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+          border-color: #3182ce;
+        }
+
+        .welcome-icon {
+          font-size: 2rem;
+          flex-shrink: 0;
+        }
+
+        .welcome-title {
+          font-size: 1.25rem;
+          font-weight: 700;
+          color: #1a202c;
+          margin: 0 0 8px 0;
+          letter-spacing: -0.025em;
+        }
+
+        .welcome-message {
+          color: #4a5568;
+          margin: 0;
+          line-height: 1.6;
+          font-size: 1rem;
+        }
+
+        .transport-list {
+          display: grid;
+          gap: 16px;
+        }
+
+        .transport-item {
+          display: flex;
+          align-items: flex-start;
+          gap: 16px;
+          padding: 16px 0;
+        }
+
+        .transport-number {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 32px;
+          height: 32px;
+          background: #3182ce;
+          color: white;
+          border-radius: 50%;
+          font-weight: 700;
+          font-size: 0.9rem;
+          flex-shrink: 0;
+        }
+
+        .transport-text {
+          color: #4a5568;
+          margin: 0;
+          line-height: 1.6;
+          font-size: 1rem;
+        }
+
+        .culture-grid {
+          display: grid;
+          gap: 16px;
+        }
+
+        .culture-item {
+          display: flex;
+          align-items: flex-start;
+          gap: 16px;
+          padding: 16px 0;
+        }
+
+        .culture-dot {
+          width: 12px;
+          height: 12px;
+          background: #3182ce;
+          border-radius: 50%;
+          margin-top: 6px;
+          flex-shrink: 0;
+        }
+
+        .culture-text {
+          color: #4a5568;
+          margin: 0;
+          line-height: 1.6;
+          font-size: 1rem;
+        }
+
+        .phrases-container {
+          display: grid;
+          gap: 16px;
+        }
+
+        .phrase-card {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 16px;
+          padding: 20px;
+          transition: all 0.3s ease;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .phrase-card:hover {
+          transform: translateX(4px);
+          box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+          border-color: #3182ce;
+        }
+
+        .phrase-native {
+          font-weight: 700;
+          color: #1a202c;
+          font-size: 1.125rem;
+          margin-bottom: 8px;
+          letter-spacing: -0.025em;
+        }
+
+        .phrase-meaning {
+          color: #4a5568;
+          font-size: 1rem;
+        }
+
+        .status-banner {
+          border-radius: 20px;
+          padding: 24px;
+          margin: 20px 0;
+          backdrop-filter: blur(10px);
+        }
+
+        .status-banner.alert {
+          background: #fed7d7;
+          border: 1px solid #feb2b2;
+        }
+
+        .status-banner.safe {
+          background: #c6f6d5;
+          border: 1px solid #9ae6b4;
+        }
+
+        .status-badge {
+          display: inline-block;
+          padding: 6px 12px;
+          border-radius: 20px;
+          font-size: 0.8rem;
+          font-weight: 700;
+          margin-bottom: 12px;
+        }
+
+        .status-badge.alert {
+          background: #e53e3e;
+          color: #ffffff;
+        }
+
+        .status-badge.safe {
+          background: #38a169;
+          color: #ffffff;
+        }
+
+        .status-content h4 {
+          font-size: 1.25rem;
+          font-weight: 700;
+          color: #1a202c;
+          margin: 0 0 8px 0;
+          letter-spacing: -0.025em;
+        }
+
+        .alert-metrics {
+          display: flex;
+          gap: 24px;
+          margin-top: 16px;
+        }
+
+        .metric {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+        }
+
+        .metric-value {
+          font-size: 1.5rem;
+          font-weight: 800;
+          color: #e53e3e;
+        }
+
+        .metric-label {
+          font-size: 0.875rem;
+          color: #4a5568;
+          margin-top: 4px;
+          font-weight: 500;
+        }
+
+        .headlines-section {
+          margin-top: 32px;
+        }
+
+        .headlines-title {
+          font-size: 1.25rem;
+          font-weight: 700;
+          color: #1a202c;
+          margin: 0 0 20px 0;
+          letter-spacing: -0.025em;
+        }
+
+        .headlines-grid {
+          display: grid;
+          gap: 16px;
+        }
+
+        .headline-card {
+          background: #ffffff;
+          border: 1px solid #e2e8f0;
+          border-radius: 16px;
+          padding: 20px;
+          transition: all 0.3s ease;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .headline-card:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+          border-color: #3182ce;
+        }
+
+        .headline-link {
+          color: #3182ce;
+          text-decoration: none;
+          font-weight: 600;
+          line-height: 1.5;
+          display: block;
+          margin-bottom: 8px;
+          font-size: 1rem;
+        }
+
+        .headline-link:hover {
           text-decoration: underline;
+          color: #2c5282;
         }
 
         .headline-source {
+          color: #4a5568;
           font-size: 0.875rem;
-          color: #6b7280;
-          margin-top: 4px;
+          font-weight: 500;
         }
 
         .mode-toggle {
@@ -1241,9 +2026,9 @@ export default function TravelWelcomeApp() {
         }
 
         .mode-toggle-button {
-          background: rgba(0, 0, 0, 0.7);
-          color: white;
-          border: none;
+          background: #ffffff;
+          color: #4a5568;
+          border: 1px solid #e2e8f0;
           padding: 8px 12px;
           border-radius: 20px;
           font-size: 0.75rem;
@@ -1251,11 +2036,24 @@ export default function TravelWelcomeApp() {
           display: flex;
           align-items: center;
           gap: 4px;
-          backdrop-filter: blur(10px);
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          font-weight: 500;
         }
 
         .mode-toggle-button:hover {
-          background: rgba(0, 0, 0, 0.9);
+          background: #f7fafc;
+          border-color: #3182ce;
+        }
+
+        @media (max-width: 480px) {
+          .header {
+            margin: 8px;
+            padding: 24px 20px;
+          }
+          
+          .tabs-container {
+            padding: 0 8px;
+          }
         }
       `}</style>
 
@@ -1273,9 +2071,12 @@ export default function TravelWelcomeApp() {
       {/* Header */}
       <div className="header">
         <div className="header-content">
-          <div>
-            <h1>Welcome</h1>
-            <p>{loading ? 'Loading...' : countryData?.name || 'Unknown Location'}</p>
+          <div className="header-left">
+            <h1>TravelLegal</h1>
+            <div className="location">
+              <MapPin size={16} />
+              {loading ? 'Loading...' : countryData?.name || 'Unknown Location'}
+            </div>
             {availableCountries.length > 0 && (
               <select 
                 value={selectedCountry} 
@@ -1291,44 +2092,46 @@ export default function TravelWelcomeApp() {
               </select>
             )}
           </div>
-          <div>
+          <div className="header-right">
             <Bell size={24} />
           </div>
         </div>
       </div>
 
       {/* Navigation Tabs */}
-      <div className="tabs">
-        <button
-          className={`tab-button ${activeTab === 'alerts' ? 'active' : ''}`}
-          onClick={() => setActiveTab('alerts')}
-        >
-          Alerts
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'welcome' ? 'active' : ''}`}
-          onClick={() => setActiveTab('welcome')}
-        >
-          Welcome
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'transport' ? 'active' : ''}`}
-          onClick={() => setActiveTab('transport')}
-        >
-          Transport
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'culture' ? 'active' : ''}`}
-          onClick={() => setActiveTab('culture')}
-        >
-          Culture
-        </button>
-        <button
-          className={`tab-button ${activeTab === 'language' ? 'active' : ''}`}
-          onClick={() => setActiveTab('language')}
-        >
-          Language
-        </button>
+      <div className="tabs-container">
+        <div className="tabs">
+          <button
+            className={`tab-button ${activeTab === 'alerts' ? 'active' : ''}`}
+            onClick={() => setActiveTab('alerts')}
+          >
+            Alerts
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'welcome' ? 'active' : ''}`}
+            onClick={() => setActiveTab('welcome')}
+          >
+            Welcome
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'transport' ? 'active' : ''}`}
+            onClick={() => setActiveTab('transport')}
+          >
+            Transport
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'culture' ? 'active' : ''}`}
+            onClick={() => setActiveTab('culture')}
+          >
+            Culture
+          </button>
+          <button
+            className={`tab-button ${activeTab === 'language' ? 'active' : ''}`}
+            onClick={() => setActiveTab('language')}
+          >
+            Language
+          </button>
+        </div>
       </div>
 
       {/* Content Area */}
@@ -1337,74 +2140,6 @@ export default function TravelWelcomeApp() {
         {error && <ErrorMessage message={error} />}
         {!loading && !error && renderTabContent()}
       </div>
-
-      {/* Demo Data - Remove when connecting to real backend */}
-      {!loading && !error && !countryData && (
-        <div className="content-area">
-          <div className="card">
-            <h3>Demo Mode</h3>
-            <p>This app is running in demo mode. Connect to your backend API to see real country data.</p>
-            <button
-              onClick={() => {
-                // Simulate loading demo data
-                setLoading(true)
-                setTimeout(() => {
-                  setCountryData({
-                    name: "Japan",
-                    welcome: [
-                      {
-                        icon: "🎌",
-                        title: "Welcome to Japan!",
-                        message: "Konnichiwa! Your travel companion is ready to help."
-                      },
-                      {
-                        icon: "🏮",
-                        title: "Cultural Experience",
-                        message: "Discover the rich traditions and modern innovations of Japan."
-                      }
-                    ],
-                    transport: [
-                      "IC cards work on all trains and subways",
-                      "Follow blue signs for domestic, red for international",
-                      "Shinkansen (bullet train) requires reserved seats for long distances",
-                      "Taxis are expensive but very reliable and clean"
-                    ],
-                    culture: [
-                      "Remove shoes when entering homes and some restaurants",
-                      "Bowing is customary - a slight nod is perfectly acceptable",
-                      "Keep voices low on public transportation",
-                      "Cash is still king - many places don't accept cards"
-                    ],
-                    language: [
-                      {
-                        native: "こんにちは (Konnichiwa)",
-                        meaning: "Hello (formal greeting)"
-                      },
-                      {
-                        native: "ありがとうございます (Arigatou gozaimasu)",
-                        meaning: "Thank you very much"
-                      },
-                      {
-                        native: "すみません (Sumimasen)",
-                        meaning: "Excuse me / I'm sorry"
-                      },
-                      {
-                        native: "英語を話せますか？ (Eigo wo hanasemasu ka?)",
-                        meaning: "Do you speak English?"
-                      }
-                    ]
-                  })
-                  setLoading(false)
-                }, 1000)
-              }}
-              className="tab-button active"
-              style={{ width: '100%', marginTop: '10px' }}
-            >
-              Load Demo Data
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -5,7 +5,7 @@ let previousLocation = null;
 // Function to fetch real anomaly data from backend
 const fetchRealAnomalyData = async (countryCode) => {
   try {
-    const response = await fetch(`http://localhost:8001/api/anomalies/${countryCode}`);
+    const response = await fetch(`http://localhost:8000/api/anomalies/${countryCode}`);
     if (!response.ok) {
       throw new Error(`Failed to fetch anomaly data: ${response.status}`);
     }
