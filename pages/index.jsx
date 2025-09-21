@@ -1,5 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
-import { Bell, Loader, MapPin, Eye, EyeOff, Plane, AlertTriangle } from 'lucide-react'
+import { Bell, Loader, MapPin, Eye, EyeOff, Plane, AlertTriangle, Filter, Shield, Toggle } from 'lucide-react'
+import AlertCategorization from '../components/AlertCategorization'
+import SmartAlertCard from '../components/SmartAlertCard'
+import SmartAlertSummary from '../components/SmartAlertSummary'
+import ComplianceChecklist from '../components/ComplianceChecklist'
+import EnhancedFiltering from '../components/EnhancedFiltering'
+import IntelligencePanel from '../components/IntelligencePanel'
+import EnhancedAlertDisplay from '../components/EnhancedAlertDisplay'
 
 export default function TravelWelcomeApp() {
   const [countryData, setCountryData] = useState(null)
@@ -9,6 +16,9 @@ export default function TravelWelcomeApp() {
   const [selectedCountry, setSelectedCountry] = useState('NP')
   const [availableCountries, setAvailableCountries] = useState([])
   const [alerts, setAlerts] = useState(null)
+
+  // Enhanced alerts state - Will be set to true after alerts load
+  const [showEnhancedView, setShowEnhancedView] = useState(false)
   
   // Location simulation state
   const [currentLocation, setCurrentLocation] = useState(null)
@@ -22,8 +32,8 @@ export default function TravelWelcomeApp() {
   // Function to fetch available countries
   const fetchCountries = async () => {
     try {
-      console.log('Fetching countries from:', 'http://localhost:8001/api/countries')
-      const response = await fetch('http://localhost:8001/api/countries')
+      console.log('Fetching countries from:', 'http://localhost:8000/api/countries')
+      const response = await fetch('http://localhost:8000/api/countries')
       console.log('Countries response status:', response.status)
       if (!response.ok) {
         throw new Error(`Failed to fetch countries: ${response.status}`)
@@ -40,7 +50,7 @@ export default function TravelWelcomeApp() {
   // Function to fetch country data from backend
   const fetchCountryData = async (countryCode = 'NP') => {
     try {
-      const url = `http://localhost:8001/api/country-info?country_code=${countryCode}`
+      const url = `http://localhost:8000/api/country-info?country_code=${countryCode}`
       console.log('Fetching country data from:', url)
       const response = await fetch(url)
       console.log('Country data response status:', response.status)
@@ -59,7 +69,7 @@ export default function TravelWelcomeApp() {
   // Function to fetch alerts/anomalies data
   const fetchAlerts = async () => {
     try {
-      const url = `http://localhost:8001/api/anomalies`
+      const url = `http://localhost:8000/api/anomalies`
       console.log('Fetching alerts from:', url)
       const response = await fetch(url)
       console.log('Alerts response status:', response.status)
@@ -75,6 +85,7 @@ export default function TravelWelcomeApp() {
     }
   }
 
+
   // Location simulation functions
   const simulateTravel = async (countryCode) => {
     try {
@@ -88,6 +99,26 @@ export default function TravelWelcomeApp() {
       
       if (result.success) {
         setCurrentLocation(result.currentLocation)
+        setSelectedCountry(countryCode)
+        
+        // Load country data and alerts when traveling
+        try {
+          const [countryData, alertsData] = await Promise.all([
+            fetchCountryData(countryCode),
+            fetchAlerts()
+          ])
+          console.log('🎯 Loaded country data and alerts:', { countryData, alertsData })
+          setCountryData(countryData)
+          setAlerts(alertsData)
+          
+          // Auto-switch to alerts tab and enable enhanced view to show ML features
+          setActiveTab('alerts')
+          setShowEnhancedView(true)
+          setIsBackgroundMode(false) // Make sure we're not in background mode
+          console.log('🧠 Auto-enabled Enhanced View and switched to Alerts tab for', countryCode)
+        } catch (error) {
+          console.error('Error loading country data:', error)
+        }
         
         if (result.locationChanged && result.alerts) {
           setLocationAlerts(result.alerts)
@@ -146,7 +177,10 @@ export default function TravelWelcomeApp() {
   const dismissLocationAlerts = () => {
     setShowLocationAlerts(false)
     setLocationAlerts(null)
-    setIsBackgroundMode(true)
+    setIsBackgroundMode(false) // Stay in app mode to show ML features
+    // Keep enhanced view enabled and alerts tab active to show ML data
+    setActiveTab('alerts')
+    setShowEnhancedView(true)
   }
 
   // Keyboard handler for demo panel
@@ -183,14 +217,13 @@ export default function TravelWelcomeApp() {
       try {
         setLoading(true)
         setError(null) // Clear any previous errors
+        
+        // Always start in background mode
+        setIsBackgroundMode(true)
+        
+        // Load countries and basic data in background
         const countries = await fetchCountries()
         setAvailableCountries(countries)
-        
-        const data = await fetchCountryData(selectedCountry)
-        setCountryData(data)
-
-        const alertsData = await fetchAlerts()
-        setAlerts(alertsData)
         
         // Get current location from simulation
         await getCurrentLocation()
@@ -206,6 +239,14 @@ export default function TravelWelcomeApp() {
     initApp()
   }, [])
 
+  // Auto-enable Enhanced View when alerts are available
+  useEffect(() => {
+    if (alerts && alerts.length > 0) {
+      console.log('🚀 Auto-enabling Enhanced View - alerts loaded:', alerts.length)
+      setShowEnhancedView(true)
+    }
+  }, [alerts])
+
   // Handle country selection
   const handleCountryChange = async (countryCode) => {
     try {
@@ -214,6 +255,7 @@ export default function TravelWelcomeApp() {
       setSelectedCountry(countryCode)
       const data = await fetchCountryData(countryCode)
       setCountryData(data)
+
       setLoading(false)
     } catch (error) {
       console.error('Error changing country:', error)
@@ -298,39 +340,88 @@ export default function TravelWelcomeApp() {
   const AlertsTab = ({ isActive }) => {
     const currentCountryAlerts = alerts?.find(alert => alert.country_code === selectedCountry)
 
+    const toggleEnhancedView = () => {
+      setShowEnhancedView(!showEnhancedView)
+    }
+
     return (
       <div className={`tab-content ${isActive ? 'active' : ''}`}>
-        <div className="card">
-          <h3 className="title">
-            {currentCountryAlerts?.is_anomaly ? '🚨' : '✅'} Travel Alerts
-          </h3>
-          {currentCountryAlerts?.is_anomaly ? (
-            <div className="alert-anomaly">
-              <p><strong>Unusual Activity Detected!</strong></p>
-              <p>Spike Factor: {currentCountryAlerts.spike_factor}x normal</p>
-              <p>Current News Volume: {currentCountryAlerts.current_count} articles</p>
-            </div>
-          ) : (
-            <div className="alert-normal">
-              <p>✅ Normal travel conditions</p>
-              <p>No unusual news activity detected</p>
-            </div>
-          )}
+        {/* Enhanced View Toggle */}
+        <div className="enhanced-controls">
+          <div className="view-toggle">
+            <button
+              className={`toggle-button ${!showEnhancedView ? 'active' : ''}`}
+              onClick={() => !showEnhancedView || toggleEnhancedView()}
+            >
+              <Shield size={16} />
+              Standard View
+            </button>
+            <button
+              className={`toggle-button ${showEnhancedView ? 'active' : ''}`}
+              onClick={toggleEnhancedView}
+            >
+              <Filter size={16} />
+              🧠 Enhanced View {showEnhancedView ? '(ML Active)' : ''}
+            </button>
+          </div>
 
-          {currentCountryAlerts?.top_headlines?.length > 0 && (
-            <div className="headlines">
-              <h4>Recent Headlines:</h4>
-              {currentCountryAlerts.top_headlines.map((headline, index) => (
-                <div key={index} className="headline-item">
-                  <a href={headline.url} target="_blank" rel="noopener noreferrer">
-                    {headline.title}
-                  </a>
-                  <div className="headline-source">{headline.source}</div>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
+
+        {/* Standard View (existing functionality) */}
+        {!showEnhancedView && (
+          <div className="card">
+            <h3 className="title">
+              {currentCountryAlerts?.is_anomaly ? '🚨' : '✅'} Travel Alerts
+            </h3>
+            {currentCountryAlerts?.is_anomaly ? (
+              <div className="alert-anomaly">
+                <p><strong>Unusual Activity Detected!</strong></p>
+                <p>Spike Factor: {currentCountryAlerts.spike_factor}x normal</p>
+                <p>Current News Volume: {currentCountryAlerts.current_count} articles</p>
+              </div>
+            ) : (
+              <div className="alert-normal">
+                <p>✅ Normal travel conditions</p>
+                <p>No unusual news activity detected</p>
+              </div>
+            )}
+
+            {currentCountryAlerts?.top_headlines?.length > 0 && (
+              <div className="headlines">
+                <h4>Recent Headlines:</h4>
+                {currentCountryAlerts.top_headlines.map((headline, index) => (
+                  <div key={index} className="headline-item">
+                    <a href={headline.url} target="_blank" rel="noopener noreferrer">
+                      {headline.title}
+                    </a>
+                    <div className="headline-source">{headline.source}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Enhanced View (ML-powered) - Using full EnhancedAlertDisplay component */}
+        {showEnhancedView && (
+          <div className="enhanced-view">
+            <EnhancedAlertDisplay 
+              countryCode={selectedCountry} 
+              className="full-enhanced-display"
+            />
+          </div>
+        )}
+
+        {/* Anomaly Status (always visible) */}
+        {currentCountryAlerts?.is_anomaly && showEnhancedView && (
+          <div className="anomaly-banner">
+            <AlertTriangle size={16} />
+            <span>
+              <strong>Anomaly Detected:</strong> {currentCountryAlerts.spike_factor}x normal activity
+              ({currentCountryAlerts.current_count} articles)
+            </span>
+          </div>
+        )}
       </div>
     )
   }
@@ -409,7 +500,7 @@ export default function TravelWelcomeApp() {
           <MapPin size={24} />
         </div>
         <div className="monitoring-text">
-          <h2>TravelLegal</h2>
+          <h2>TravelSense</h2>
           <p>Running in background</p>
         </div>
         <div className="monitoring-status">
@@ -463,6 +554,9 @@ export default function TravelWelcomeApp() {
             </button>
           </div>
           <p className="demo-hint">Press 'D' 3 times to toggle this panel</p>
+          <div style={{ marginTop: '12px', padding: '8px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '6px', fontSize: '0.75rem', color: '#3b82f6' }}>
+            💡 <strong>To see ML features:</strong> Select a country → Go to "Alerts" tab → Enhanced View is now ON by default!
+          </div>
         </div>
       )}
     </div>
@@ -1257,6 +1351,206 @@ export default function TravelWelcomeApp() {
         .mode-toggle-button:hover {
           background: rgba(0, 0, 0, 0.9);
         }
+
+        .enhanced-controls {
+          margin-bottom: 20px;
+          background: white;
+          border-radius: 12px;
+          padding: 16px;
+          border: 1px solid #e5e7eb;
+          box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1);
+        }
+
+        .view-toggle {
+          display: flex;
+          gap: 8px;
+          margin-bottom: 12px;
+          background: #f9fafb;
+          padding: 4px;
+          border-radius: 8px;
+        }
+
+        .toggle-button {
+          flex: 1;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          padding: 8px 12px;
+          border: none;
+          background: transparent;
+          border-radius: 6px;
+          font-size: 0.875rem;
+          font-weight: 500;
+          color: #6b7280;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .toggle-button.active {
+          background: white;
+          color: #2563eb;
+          box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+          border: 1px solid #e5e7eb;
+        }
+
+        .toggle-button:hover:not(.active) {
+          background: rgba(255, 255, 255, 0.5);
+        }
+
+        .toggle-button:disabled {
+          opacity: 0.6;
+          cursor: not-allowed;
+        }
+
+        .filter-controls {
+          display: flex;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+
+        .filter-toggle {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          padding: 6px 12px;
+          border: 1px solid #d1d5db;
+          background: white;
+          border-radius: 6px;
+          font-size: 0.75rem;
+          font-weight: 500;
+          color: #374151;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .filter-toggle.active {
+          background: #3b82f6;
+          color: white;
+          border-color: #3b82f6;
+        }
+
+        .filter-toggle:hover:not(.active) {
+          background: #f9fafb;
+          border-color: #9ca3af;
+        }
+
+        .enhanced-view {
+          margin-top: 0;
+        }
+
+        .enhanced-categorization {
+          margin: 0;
+        }
+
+        .full-enhanced-display {
+          margin: 0;
+          border-radius: 16px;
+          overflow: hidden;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .anomaly-banner {
+          background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+          border: 1px solid #fecaca;
+          border-radius: 8px;
+          padding: 12px 16px;
+          margin-top: 16px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #dc2626;
+          font-size: 0.875rem;
+        }
+
+        @media (max-width: 768px) {
+          .view-toggle {
+            flex-direction: column;
+          }
+
+          .filter-controls {
+            justify-content: center;
+          }
+
+          .filter-toggle {
+            font-size: 0.7rem;
+            padding: 5px 10px;
+          }
+        }
+
+        .intelligence-controls {
+          display: flex;
+          gap: 12px;
+          margin-bottom: 20px;
+          justify-content: center;
+          flex-wrap: wrap;
+        }
+
+        .intelligence-toggle {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 12px 20px;
+          background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+          border: 1px solid #cbd5e1;
+          border-radius: 10px;
+          font-weight: 600;
+          color: #374151;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          font-size: 0.875rem;
+        }
+
+        .intelligence-toggle:hover {
+          background: linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%);
+          transform: translateY(-2px);
+          box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .intelligence-toggle.active {
+          background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+          color: white;
+          border-color: #2563eb;
+        }
+
+        .intelligence-panel {
+          margin-bottom: 20px;
+          animation: slideDown 0.3s ease-out;
+        }
+
+        .compliance-panel {
+          margin-bottom: 20px;
+          animation: slideDown 0.3s ease-out;
+        }
+
+        .intelligence-summary {
+          margin-bottom: 20px;
+        }
+
+        @keyframes slideDown {
+          from {
+            opacity: 0;
+            transform: translateY(-10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+
+        @media (max-width: 768px) {
+          .intelligence-controls {
+            flex-direction: column;
+            align-items: center;
+          }
+
+          .intelligence-toggle {
+            width: 100%;
+            justify-content: center;
+            padding: 10px 16px;
+          }
+        }
       `}</style>
 
       {/* Mode Toggle Button */}
@@ -1277,17 +1571,26 @@ export default function TravelWelcomeApp() {
             <h1>Welcome</h1>
             <p>{loading ? 'Loading...' : countryData?.name || 'Unknown Location'}</p>
             {availableCountries.length > 0 && (
-              <select 
-                value={selectedCountry} 
+              <select
+                value={selectedCountry}
                 onChange={(e) => handleCountryChange(e.target.value)}
-                className="country-selector"
+                className="country-selector enhanced"
                 disabled={loading}
+                title="Select country to view travel intelligence"
               >
-                {availableCountries.map(country => (
-                  <option key={country.code} value={country.code}>
-                    {country.flag} {country.name}
-                  </option>
-                ))}
+                {availableCountries.map(country => {
+                  // Get preview of alerts for this country
+                  const countryAlerts = alerts?.find(alert => alert.country_code === country.code)
+                  const alertInfo = countryAlerts?.is_anomaly
+                    ? `🚨 ${countryAlerts.spike_factor}x activity`
+                    : '✅ Normal'
+
+                  return (
+                    <option key={country.code} value={country.code}>
+                      {country.flag} {country.name} - {alertInfo}
+                    </option>
+                  )
+                })}
               </select>
             )}
           </div>
