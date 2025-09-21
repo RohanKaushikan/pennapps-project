@@ -376,13 +376,20 @@ export default function TravelWelcomeApp() {
   // Location simulation functions
   const simulateTravel = async (countryCode) => {
     try {
+      console.log(`🛫 Simulating travel to ${countryCode}...`)
+      
       const response = await fetch('/api/simulate-travel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ countryCode, action: 'setLocation' })
       })
       
+      if (!response.ok) {
+        throw new Error(`Travel simulation failed: ${response.status}`)
+      }
+      
       const result = await response.json()
+      console.log('✈️ Travel simulation result:', result)
       
       if (result.success) {
         setCurrentLocation(result.currentLocation)
@@ -405,6 +412,7 @@ export default function TravelWelcomeApp() {
           console.log('🧠 Auto-enabled Enhanced View and switched to Alerts tab for', countryCode)
         } catch (error) {
           console.error('Error loading country data:', error)
+          // Still continue with travel simulation even if data loading fails
         }
         
         if (result.locationChanged && result.alerts) {
@@ -442,10 +450,16 @@ export default function TravelWelcomeApp() {
               }
             })
           }
+        } else {
+          console.log('🏠 Location set but no alerts triggered (no location change or no alerts)')
         }
+      } else {
+        console.error('❌ Travel simulation failed:', result.message)
       }
     } catch (error) {
-      console.error('Error simulating travel:', error)
+      console.error('❌ Error simulating travel:', error)
+      // Show user-friendly error message
+      alert(`Failed to simulate travel to ${countryCode}. Please make sure the backend server is running.`)
     }
   }
 
@@ -897,14 +911,10 @@ export default function TravelWelcomeApp() {
             <p className="available-countries">
               🌍 Any country detected - data scraped in real time
             </p>
+            <div style={{ marginTop: '12px', padding: '8px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '6px', fontSize: '0.75rem', color: '#3b82f6' }}>
+              💡 <strong>To see ML features:</strong> Select a country → Go to "Alerts" tab → Enhanced View is now ON by default!
+            </div>
           </div>
-<<<<<<< HEAD
-          <p className="demo-hint">Press 'D' 3 times to toggle this panel</p>
-          <div style={{ marginTop: '12px', padding: '8px', background: 'rgba(59, 130, 246, 0.1)', borderRadius: '6px', fontSize: '0.75rem', color: '#3b82f6' }}>
-            💡 <strong>To see ML features:</strong> Select a country → Go to "Alerts" tab → Enhanced View is now ON by default!
-          </div>
-=======
->>>>>>> 7e394597dd6eb7767874d2f97829bd0b48a70103
         </div>
       )}
     </div>
